@@ -27,6 +27,13 @@
 }
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+html {
+  width: 100%;
+  overflow-x: hidden;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   background: #f5f5f0;
@@ -38,6 +45,8 @@ body {
   padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
   user-select: none;
   -webkit-user-select: none;
+  width: 100%;
+  overflow-x: hidden;
 }
 
 .container {
@@ -97,7 +106,7 @@ body {
   display: grid;
   grid-template-columns: repeat(var(--box-cell-cols), 1fr);
   grid-template-rows: repeat(var(--box-cell-rows), 1fr);
-  border: 1.6px solid #9a9a9a;
+  border: 1.25px solid #111;
   background-color: var(--box-tone-a);
 }
 .box.box-tone-b { background-color: var(--box-tone-b); }
@@ -181,7 +190,7 @@ body {
 .phone-layout .num-pad-shell.align-left .pad-side-btn { order: 2; }
 .phone-layout .num-pad-shell.align-right .pad-side-btn { order: 1; }
 .phone-layout .num-pad-shell.align-right .num-pad { order: 2; }
-.phone-layout .header .title { order: 1; }
+.phone-layout .header .title { display: none; }
 .phone-layout .header #sizeGroup { order: 2; }
 .phone-layout .header #helpBtn { order: 3; }
 .phone-layout .header #diffGroup { order: 4; }
@@ -294,6 +303,73 @@ body {
   .hint-panel { flex-direction: row; }
   .header { justify-content: center; }
 }
+
+.phone-layout {
+  align-items: flex-start;
+  justify-content: flex-start;
+}
+
+.phone-layout .container {
+  width: 100%;
+  max-width: 100vw;
+  min-height: 100dvh;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 12px max(8px, env(safe-area-inset-right)) 14px max(8px, env(safe-area-inset-left));
+  gap: 10px;
+  overflow-x: hidden;
+}
+
+.phone-layout .header {
+  justify-content: center;
+  gap: 8px;
+}
+
+.phone-layout .control-group {
+  max-width: 100%;
+}
+
+.phone-layout .ctrl-btn {
+  padding: 7px 12px;
+}
+
+.phone-layout .main-area {
+  width: 100%;
+}
+
+.phone-layout .hint-panel {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  width: 100%;
+  gap: 8px;
+}
+
+.phone-layout .hint-btn {
+  min-width: 0;
+  width: 100%;
+  padding: 8px 4px;
+  font-size: 14px;
+}
+
+.phone-layout .footer {
+  width: 100%;
+  gap: 10px 12px;
+}
+
+.phone-layout .setting-row,
+.phone-layout .givens-control {
+  flex: 0 1 auto;
+}
+
+@supports (width: 100dvw) {
+  .phone-layout .container { max-width: 100dvw; }
+}
+
+@media (max-width: 380px) {
+  .phone-layout .ctrl-btn { padding: 7px 9px; }
+  .phone-layout .hint-btn { font-size: 13px; }
+  .phone-layout .footer { gap: 8px 10px; }
+}
 </style>
 </head>
 <body>
@@ -301,7 +377,7 @@ body {
 <div class="container">
   <!-- 顶部 -->
   <div class="header">
-    <span class="title">数独</span>
+    <span class="title">数独游戏</span>
     <div class="control-group" id="sizeGroup">
       <button class="ctrl-btn" data-size="4">4×4</button>
       <button class="ctrl-btn" data-size="6">6×6</button>
@@ -683,10 +759,15 @@ function buildBoardDOM() {
   // 自适应格子大小
   const vw = window.innerWidth;
   const vh = window.innerHeight;
-  const maxBoardPx = Math.min(vw * 0.75, vh * 0.7);
+  const profile = getDeviceProfile();
+  const maxBoardPx = profile.type === 'phone'
+    ? Math.min(vw - 22, vh * 0.54)
+    : Math.min(vw * 0.75, vh * 0.7);
   const cellPx = Math.floor(maxBoardPx / size);
   // 限制最小/最大
-  const clampedCell = Math.max(28, Math.min(cellPx, 56));
+  const minCell = profile.type === 'phone' ? (size >= 16 ? 18 : size >= 9 ? 30 : 32) : 28;
+  const maxCell = profile.type === 'phone' ? 48 : 56;
+  const clampedCell = Math.max(minCell, Math.min(cellPx, maxCell));
 
   for (let boxR = 0; boxR < size / br; boxR++) {
     for (let boxC = 0; boxC < size / bc; boxC++) {
