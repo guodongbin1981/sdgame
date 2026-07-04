@@ -187,6 +187,9 @@ body {
 .phone-layout .header #diffGroup { order: 4; }
 .phone-layout .header #newGameBtn { order: 5; }
 .phone-layout .header #printBtn { order: 6; }
+.tablet-layout .container { max-width: calc(100vw - 20px); }
+.tablet-layout .main-area { gap: 12px; }
+.tablet-layout .hint-panel { gap: 6px; }
 
 /* ── 底部 ── */
 .footer {
@@ -201,11 +204,11 @@ body {
 .error-count.safe { color: #888; }
 .setting-row { display: flex; align-items: center; gap: 6px; cursor: pointer; }
 .givens-control { display: flex; align-items: center; gap: 6px; }
-.givens-input {
-  width: 54px; height: 28px; border: 1.5px solid #ddd; border-radius: 7px;
-  padding: 3px 6px; font-size: 13px; color: #333; text-align: center;
+.givens-select {
+  min-width: 74px; height: 28px; border: 1.5px solid #ddd; border-radius: 7px;
+  padding: 2px 8px; font-size: 13px; color: #222; background: #fff;
 }
-.givens-input:focus { outline: none; border-color: var(--accent); }
+.givens-select:focus { outline: none; border-color: var(--accent); }
 .tone-select {
   min-width: 92px; height: 28px; border: 1.5px solid #ddd; border-radius: 7px;
   padding: 2px 8px; font-size: 13px; color: #222;
@@ -335,7 +338,7 @@ body {
   <div class="footer">
     <span>⏱ <span class="timer" id="timer">00:00</span></span>
     <span>已知: <span id="givensCount">0</span></span>
-    <label class="givens-control">目标已知<input class="givens-input" id="givensInput" type="number" min="1" step="1"></label>
+    <label class="givens-control">目标已知<select class="givens-select" id="givensSelect"></select></label>
     <label class="givens-control">宫格色<select class="tone-select" id="boxToneSelect"></select></label>
     <span>错误: <span class="error-count safe" id="errorCount">0</span></span>
     <label class="setting-row">
@@ -438,7 +441,7 @@ const PAPER_SIZES = {
 const BOX_TONE_OPTIONS = {
   green: { label: '浅绿', color: '#dcefdc' },
   blue: { label: '浅蓝', color: '#dcecff' },
-  yellow: { label: 'Excel黄', color: '#ffff00' },
+  yellow: { label: '标准黄', color: '#ffff00' },
   pink: { label: '浅粉', color: '#f6dde5' },
   violet: { label: '浅紫', color: '#e9def7' },
   peach: { label: '浅桃', color: '#f7e2d1' },
@@ -658,7 +661,7 @@ const boardEl = document.getElementById('board');
 const timerEl = document.getElementById('timer');
 const errorCountEl = document.getElementById('errorCount');
 const givensCountEl = document.getElementById('givensCount');
-const givensInputEl = document.getElementById('givensInput');
+const givensSelectEl = document.getElementById('givensSelect');
 const boxToneSelectEl = document.getElementById('boxToneSelect');
 const numPad = document.getElementById('numPad');
 const numPadShell = document.getElementById('numPadShell');
@@ -774,6 +777,32 @@ function applyBoxTone() {
   document.documentElement.style.setProperty('--box-tone-b', tone.color);
   if (boxToneSelectEl.value !== state.boxToneKey) boxToneSelectEl.value = state.boxToneKey;
 }
+function getGivensOptions(size) {
+  const cfg = BOARD_CONFIGS[size];
+  const targets = Object.values(cfg.givensTargets);
+  const minTarget = Math.min(...targets);
+  const maxTarget = Math.max(...targets);
+  const step = size >= 16 ? 5 : (size >= 9 ? 2 : 1);
+  const low = Math.max(1, minTarget - step * 3);
+  const high = Math.min(size * size - 1, maxTarget + step * 3);
+  const values = new Set(targets);
+  for (let n = low; n <= high; n += step) values.add(n);
+  return Array.from(values).sort((a, b) => b - a);
+}
+function updateGivensOptions(target) {
+  const selected = normalizeGivensTarget(state.boardSize, target) || defaultGivensTarget(state.boardSize, state.difficulty);
+  const values = getGivensOptions(state.boardSize);
+  if (!values.includes(selected)) values.push(selected);
+  values.sort((a, b) => b - a);
+  givensSelectEl.replaceChildren();
+  values.forEach(n => {
+    const option = document.createElement('option');
+    option.value = String(n);
+    option.textContent = n + ' 个';
+    givensSelectEl.appendChild(option);
+  });
+  givensSelectEl.value = String(selected);
+}
 function initBoxToneOptions() {
   boxToneSelectEl.replaceChildren();
   Object.entries(BOX_TONE_OPTIONS).forEach(([key, tone]) => {
@@ -786,12 +815,9 @@ function initBoxToneOptions() {
   });
 }
 function syncGivensControls() {
-  const total = state.boardSize * state.boardSize;
   const defaultTarget = defaultGivensTarget(state.boardSize, state.difficulty);
   const target = normalizeGivensTarget(state.boardSize, state.givensTarget) || defaultTarget;
-  givensInputEl.min = 1;
-  givensInputEl.max = total;
-  givensInputEl.value = target;
+  updateGivensOptions(target);
   givensCountEl.textContent = countGivens(state.puzzle);
 }
 function renderAll() { renderBoard(); renderTimer(); renderErrors(); syncGivensControls(); applyBoxTone(); }
@@ -833,22 +859,40 @@ function updatePadSideUI() {
   padSideBtn.title = isRight ? '数字键盘切换到左侧' : '数字键盘切换到右侧';
   padSideBtn.setAttribute('aria-label', padSideBtn.title);
 }
-function isPhoneDevice() {
-  const mobileHint = navigator.userAgentData && navigator.userAgentData.mobile === true;
-  const coarsePointer = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
-  const shortestSide = Math.min(window.screen.width || window.innerWidth, window.screen.height || window.innerHeight);
-  return mobileHint || (coarsePointer && shortestSide <= 600);
+
+function getDeviceProfile() {
+  const uaMobile = !!(navigator.userAgentData && navigator.userAgentData.mobile === true);
+  const coarsePointer = !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+  const viewportW = window.innerWidth || document.documentElement.clientWidth || 0;
+  const viewportH = window.innerHeight || document.documentElement.clientHeight || 0;
+  const screenW = window.screen.width || viewportW;
+  const screenH = window.screen.height || viewportH;
+  const shortestSide = Math.min(screenW, screenH);
+  const longestSide = Math.max(screenW, screenH);
+  const likelyPhone = uaMobile || (coarsePointer && shortestSide <= 600);
+  const likelyTablet = !likelyPhone && coarsePointer && shortestSide <= 1024 && longestSide <= 1400;
+  const type = likelyPhone ? 'phone' : (likelyTablet ? 'tablet' : 'desktop');
+  return { type, viewportW, viewportH, screenW, screenH, shortestSide, longestSide, coarsePointer };
 }
-function updatePhoneLayout() {
-  document.body.classList.toggle('phone-layout', isPhoneDevice());
+
+function updateAdaptiveLayout() {
+  const profile = getDeviceProfile();
+  document.body.classList.toggle('phone-layout', profile.type === 'phone');
+  document.body.classList.toggle('tablet-layout', profile.type === 'tablet');
+  document.body.dataset.deviceType = profile.type;
+  document.body.dataset.viewport = profile.viewportW + 'x' + profile.viewportH;
+  document.body.dataset.screen = profile.screenW + 'x' + profile.screenH;
 }
 function updatePhoneScale() {
+  const profile = getDeviceProfile();
   appContainer.style.zoom = '1';
-  if (!document.body.classList.contains('phone-layout')) return;
-  const availableW = Math.max(1, window.innerWidth - 8);
-  const availableH = Math.max(1, window.innerHeight - 8);
+  if (profile.type === 'desktop') return;
+  const edgePadding = profile.type === 'phone' ? 8 : 18;
+  const minScale = profile.type === 'phone' ? 0.6 : 0.82;
+  const availableW = Math.max(1, window.innerWidth - edgePadding);
+  const availableH = Math.max(1, window.innerHeight - edgePadding);
   const scale = Math.min(1, availableW / appContainer.scrollWidth, availableH / appContainer.scrollHeight);
-  appContainer.style.zoom = String(Math.max(0.6, scale));
+  appContainer.style.zoom = String(Math.max(minScale, scale));
 }
 function schedulePhoneScale() {
   requestAnimationFrame(() => requestAnimationFrame(updatePhoneScale));
@@ -1578,8 +1622,8 @@ function clearAllHistory() {
 document.querySelectorAll('#sizeGroup .ctrl-btn').forEach(b => { b.addEventListener('click', () => { const nextSize = parseInt(b.dataset.size); state.givensTarget = defaultGivensTarget(nextSize, state.difficulty); startGame(nextSize, state.difficulty); }); });
 document.querySelectorAll('#diffGroup .ctrl-btn').forEach(b => { b.addEventListener('click', () => { state.givensTarget = defaultGivensTarget(state.boardSize, b.dataset.diff); startGame(state.boardSize, b.dataset.diff); }); });
 document.getElementById('newGameBtn').addEventListener('click', () => startGame(state.boardSize, state.difficulty));
-givensInputEl.addEventListener('change', () => {
-  state.givensTarget = normalizeGivensTarget(state.boardSize, givensInputEl.value) || defaultGivensTarget(state.boardSize, state.difficulty);
+givensSelectEl.addEventListener('change', () => {
+  state.givensTarget = normalizeGivensTarget(state.boardSize, givensSelectEl.value) || defaultGivensTarget(state.boardSize, state.difficulty);
   startGame(state.boardSize, state.difficulty);
 });
 boxToneSelectEl.addEventListener('change', () => {
@@ -1650,13 +1694,13 @@ document.getElementById('reasonCloseBtn').addEventListener('click', closeReason)
 reasonOverlay.addEventListener('click', e => { if (e.target === reasonOverlay) closeReason(); });
 
 // 窗口大小变化时重绘
-window.addEventListener('resize', () => { updatePhoneLayout(); buildBoardDOM(); renderBoard(); schedulePhoneScale(); });
-window.addEventListener('orientationchange', () => { updatePhoneLayout(); schedulePhoneScale(); });
+window.addEventListener('resize', () => { updateAdaptiveLayout(); buildBoardDOM(); renderBoard(); schedulePhoneScale(); });
+window.addEventListener('orientationchange', () => { updateAdaptiveLayout(); schedulePhoneScale(); });
 
 // ==================== 启动 ====================
 initBoxToneOptions();
 applyBoxTone();
-updatePhoneLayout(); buildBoardDOM(); updatePadSideUI(); updateStrictUI(); checkRestore(); schedulePhoneScale();
+updateAdaptiveLayout(); buildBoardDOM(); updatePadSideUI(); updateStrictUI(); checkRestore(); schedulePhoneScale();
 </script>
 </body>
 </html>
