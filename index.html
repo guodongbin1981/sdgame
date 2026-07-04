@@ -856,6 +856,12 @@ function countGivens(board) {
 function applyBoxTone() {
   const tone = BOX_TONE_OPTIONS[state.boxToneKey] || BOX_TONE_OPTIONS.green;
   document.documentElement.style.setProperty('--box-tone-b', tone.color);
+  const sameNumberColors = state.boxToneKey === 'yellow'
+    ? { bg: '#67e8f9', selectedBg: '#22d3ee', ring: '#0891b2' }
+    : { bg: '#fde047', selectedBg: '#facc15', ring: '#ca8a04' };
+  document.documentElement.style.setProperty('--same-number-bg', sameNumberColors.bg);
+  document.documentElement.style.setProperty('--same-number-selected-bg', sameNumberColors.selectedBg);
+  document.documentElement.style.setProperty('--same-number-ring', sameNumberColors.ring);
   if (boxToneSelectEl.value !== state.boxToneKey) boxToneSelectEl.value = state.boxToneKey;
 }
 function getGivensOptions(size) {
