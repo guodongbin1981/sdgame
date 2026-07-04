@@ -1,0 +1,1662 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=yes">
+<!--
+  公网部署请追加 HTTP 响应头:
+  Content-Security-Policy: frame-ancestors 'none'
+  X-Frame-Options: DENY
+  (frame-ancestors 无法通过 meta 标签生效, 必须服务器下发)
+-->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'none'; form-action 'none';">
+<title>数独</title>
+<style>
+:root {
+  --accent: #16a34a;
+  --accent-hover: #15803d;
+  --accent-soft: #dcfce7;
+  --accent-soft-strong: #bbf7d0;
+  --accent-border: #86efac;
+  --accent-tint: #f0fdf4;
+  --box-tone-a: #ffffff;
+  --box-tone-b: #dcefdc;
+  --same-number-bg: #fde047;
+  --same-number-selected-bg: #facc15;
+  --same-number-ring: #ca8a04;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  background: #f5f5f0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.container {
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 2px 20px rgba(0,0,0,0.08);
+  padding: 28px 32px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+/* ── 顶部 ── */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.title { font-size: 26px; font-weight: 700; color: #1a1a1a; letter-spacing: 2px; }
+.control-group { display: flex; gap: 4px; background: #f0f0ea; border-radius: 8px; padding: 3px; }
+.ctrl-btn {
+  padding: 6px 12px; border: none; border-radius: 6px; font-size: 13px; cursor: pointer;
+  background: transparent; color: #777; transition: all 0.2s; font-weight: 500;
+}
+.ctrl-btn.active { background: #fff; color: #1a1a1a; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+.ctrl-btn:hover:not(.active) { color: #444; background: rgba(255,255,255,0.5); }
+
+.action-btn {
+  padding: 7px 15px; border: 1.5px solid var(--accent); border-radius: 8px; font-size: 13px;
+  cursor: pointer; background: var(--accent); color: #fff; font-weight: 500; transition: all 0.2s;
+}
+.action-btn:hover { background: var(--accent-hover); }
+
+.secondary-btn {
+  padding: 7px 13px; border: 1.5px solid #ddd; border-radius: 8px; font-size: 13px;
+  cursor: pointer; background: #fff; color: #666; font-weight: 500; transition: all 0.2s;
+}
+.secondary-btn:hover { border-color: var(--accent); color: var(--accent); }
+.secondary-btn:disabled { background: #f1f1f1; border-color: #ddd; color: #aaa; cursor: not-allowed; }
+
+/* ── 主区域 ── */
+.main-area { display: flex; align-items: stretch; gap: 16px; }
+
+/* ── 盘面 ── */
+.board-outer { border: 3px solid #333; border-radius: 2px; line-height: 0; }
+.board-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--box-grid-cols), 1fr);
+  grid-template-rows: repeat(var(--box-grid-rows), 1fr);
+}
+.box {
+  display: grid;
+  grid-template-columns: repeat(var(--box-cell-cols), 1fr);
+  grid-template-rows: repeat(var(--box-cell-rows), 1fr);
+  border: 1.6px solid #9a9a9a;
+  background-color: var(--box-tone-a);
+}
+.box.box-tone-b { background-color: var(--box-tone-b); }
+.cell {
+  border: 1.1px solid #b9b9b9;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; font-weight: 400; color: #1a1a1a; transition: background 0.1s;
+  position: relative;
+}
+.cell:hover { background-color: var(--accent-tint); }
+.cell.selected { background-color: var(--accent-soft); box-shadow: inset 0 0 0 2px var(--accent); }
+.board-grid .cell.same-number { background-color: var(--same-number-bg) !important; color: #111; }
+.board-grid .cell.same-number.selected { background-color: var(--same-number-selected-bg) !important; box-shadow: inset 0 0 0 3px var(--same-number-ring); }
+.cell.given { font-weight: 700; color: #111; }
+.cell.user-filled { color: #374151; font-weight: 400; }
+.cell.hint-filled { color: var(--accent); font-weight: 600; }
+.cell.error { color: #dc2626; }
+.cell.answer-wrong::after {
+  content: '';
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 0; height: 0;
+  border-style: solid;
+  border-width: 7px 7px 0 0;
+  border-color: #f59e0b transparent transparent transparent;
+}
+.cell.highlight-hint {
+  box-shadow: inset 0 0 0 3px var(--accent);
+  animation: hint-pulse 1s ease-in-out infinite;
+}
+@keyframes hint-pulse {
+  0%, 100% { box-shadow: inset 0 0 0 3px var(--accent); }
+  50% { box-shadow: inset 0 0 0 3px var(--accent-border); }
+}
+
+.reason-modal { max-width: 440px; text-align: left; }
+.reason-modal h2 { text-align: center; }
+.reason-content { font-size: 15px; color: #333; line-height: 2; padding: 8px 0; }
+.reason-content .cell-addr { color: var(--accent); font-weight: 600; font-size: 16px; }
+.reason-content .conclusion { color: var(--accent); font-weight: 700; font-size: 16px; margin-top: 4px; }
+.reason-content .candidates { color: #b45309; }
+
+/* ── 提示区 ── */
+.hint-panel { display: flex; flex-direction: column; gap: 8px; justify-content: center; }
+.hint-btn {
+  padding: 9px 14px; border: 1.5px solid var(--accent); border-radius: 8px; font-size: 13px;
+  cursor: pointer; background: #fff; color: var(--accent); font-weight: 500; transition: all 0.2s;
+  white-space: nowrap;
+}
+.hint-btn:hover { background: var(--accent); color: #fff; }
+.hint-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.hint-btn:disabled:hover { background: #fff; color: var(--accent); }
+
+/* ── 数字键盘 ── */
+.num-pad-shell { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; }
+.num-pad { display: flex; gap: 5px; align-items: center; flex-wrap: wrap; justify-content: center; }
+.num-btn {
+  width: 38px; height: 38px; border: 1.5px solid #ddd; border-radius: 8px; font-size: 17px;
+  font-weight: 600; cursor: pointer; background: #fff; color: #374151; transition: all 0.15s;
+}
+.num-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-tint); }
+.num-btn:active { background: var(--accent-soft); }
+.erase-btn {
+  width: 38px; height: 38px; border: 1.5px solid #e5e5e5; border-radius: 8px; font-size: 14px;
+  cursor: pointer; background: #fafafa; color: #999; transition: all 0.15s;
+  display: flex; align-items: center; justify-content: center;
+}
+.erase-btn:hover { border-color: #dc2626; color: #dc2626; background: #fef2f2; }
+.pad-side-btn {
+  display: none; width: 38px; min-width: 38px; height: 81px; border: 1.5px solid #cbd5e1;
+  border-radius: 8px; background: #f8fafc; color: var(--accent); font-size: 21px; font-weight: 700;
+  cursor: pointer; align-items: center; justify-content: center;
+}
+.pad-side-btn:active { background: var(--accent-soft); }
+.phone-layout .num-pad-shell { justify-content: flex-start; }
+.phone-layout .num-pad-shell.align-right { justify-content: flex-end; }
+.phone-layout .num-pad { display: grid; grid-template-columns: repeat(5, 38px); gap: 5px; flex: none; }
+.phone-layout .pad-side-btn { display: flex; }
+.phone-layout .num-pad-shell.align-left .num-pad { order: 1; }
+.phone-layout .num-pad-shell.align-left .pad-side-btn { order: 2; }
+.phone-layout .num-pad-shell.align-right .pad-side-btn { order: 1; }
+.phone-layout .num-pad-shell.align-right .num-pad { order: 2; }
+.phone-layout .header .title { order: 1; }
+.phone-layout .header #sizeGroup { order: 2; }
+.phone-layout .header #helpBtn { order: 3; }
+.phone-layout .header #diffGroup { order: 4; }
+.phone-layout .header #newGameBtn { order: 5; }
+.phone-layout .header #printBtn { order: 6; }
+
+/* ── 底部 ── */
+.footer {
+  display: flex; align-items: center; gap: 20px; font-size: 13px; color: #888; flex-wrap: wrap;
+  justify-content: center;
+}
+.timer {
+  font-variant-numeric: tabular-nums; font-family: "SF Mono", "Consolas", monospace;
+  font-size: 14px; color: #555;
+}
+.error-count { color: #dc2626; font-weight: 500; }
+.error-count.safe { color: #888; }
+.setting-row { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.givens-control { display: flex; align-items: center; gap: 6px; }
+.givens-input {
+  width: 54px; height: 28px; border: 1.5px solid #ddd; border-radius: 7px;
+  padding: 3px 6px; font-size: 13px; color: #333; text-align: center;
+}
+.givens-input:focus { outline: none; border-color: var(--accent); }
+.tone-select {
+  min-width: 92px; height: 28px; border: 1.5px solid #ddd; border-radius: 7px;
+  padding: 2px 8px; font-size: 13px; color: #222;
+}
+.tone-select:focus { outline: none; border-color: var(--accent); }
+.toggle-switch { position: relative; width: 34px; height: 19px; }
+.toggle-switch input { opacity: 0; width: 0; height: 0; }
+.toggle-slider {
+  position: absolute; inset: 0; background: #ddd; border-radius: 10px; transition: 0.2s;
+}
+.toggle-slider::before {
+  content: ""; position: absolute; width: 15px; height: 15px; left: 2px; bottom: 2px;
+  background: #fff; border-radius: 50%; transition: 0.2s;
+}
+.toggle-switch input:checked + .toggle-slider { background: var(--accent); }
+.toggle-switch input:checked + .toggle-slider::before { transform: translateX(15px); }
+
+/* ── 弹窗通用 ── */
+.overlay {
+  display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.3); z-index: 100;
+  justify-content: center; align-items: center;
+}
+.overlay.show { display: flex; }
+.modal {
+  background: #fff; border-radius: 16px; padding: 32px 40px; text-align: center;
+  box-shadow: 0 8px 40px rgba(0,0,0,0.15); max-width: 90vw;
+}
+.modal h2 { font-size: 22px; margin-bottom: 6px; color: #1a1a1a; }
+.modal .time-result { font-size: 30px; font-weight: 700; color: var(--accent); margin: 10px 0;
+  font-family: "SF Mono", "Consolas", monospace; }
+.modal button {
+  margin-top: 14px; padding: 9px 26px; border: none; border-radius: 8px; font-size: 14px;
+  cursor: pointer; background: var(--accent); color: #fff; font-weight: 500;
+}
+.modal button:hover { background: var(--accent-hover); }
+
+/* ── 玩法说明弹窗 ── */
+.help-modal { max-width: 540px; padding: 24px 32px 20px; text-align: left; }
+.help-content { max-height: 55vh; overflow-y: auto; margin: 14px 0 18px; padding-right: 6px; }
+.help-section { margin-bottom: 16px; }
+.help-section h3 { font-size: 14px; color: #1a1a1a; margin-bottom: 5px; padding-bottom: 3px; border-bottom: 1px solid #eee; }
+.help-section p, .help-section li { font-size: 13px; color: #555; line-height: 1.7; }
+.help-section ol, .help-section ul { padding-left: 16px; }
+.help-section li { margin-bottom: 1px; }
+.color-dot { display: inline-block; width: 11px; height: 11px; border-radius: 3px; margin-right: 3px; vertical-align: middle; position: relative; top: -1px; }
+.given-dot { background: #111; } .user-dot { background: #374151; } .hint-dot { background: var(--accent); } .error-dot { background: #dc2626; } .same-dot { background: var(--same-number-bg); border: 1px solid var(--same-number-ring); }
+.help-modal button { width: 100%; }
+
+/* ── 打印弹窗 ── */
+.print-modal { max-width: 440px; text-align: left; }
+.print-modal h2 { text-align: center; }
+.print-row { display: flex; align-items: center; gap: 10px; margin: 8px 0; }
+.print-row label { font-size: 14px; color: #555; min-width: 50px; }
+.print-row select, .print-row input { padding: 6px 10px; border: 1.5px solid #ddd; border-radius: 6px; font-size: 14px; }
+.print-row select { min-width: 80px; }
+
+.history-list { margin-top: 12px; border-top: 1px solid #eee; padding-top: 10px; max-height: 300px; overflow-y: auto; }
+.history-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+.history-head h3 { font-size: 13px; color: #555; margin: 0; }
+.history-item { display: flex; align-items: center; gap: 6px; padding: 4px 0; font-size: 12px; border-bottom: 1px solid #f8f8f8; }
+.history-item span { color: #666; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.history-item.hidden { display: none; }
+.hist-btns { margin-left: auto; display: flex; gap: 4px; flex-shrink: 0; }
+.hist-btn { padding: 3px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 11px; cursor: pointer; background: #fff; color: #666; }
+.hist-btn.danger { border-color: #fca5a5; background: #fff5f5; color: #b91c1c; font-weight: 600; }
+.hist-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.hist-btn.danger:disabled { background: #f5f5f5; border-color: #e5e5e5; color: #9ca3af; }
+.hist-toggle { display: block; width: 100%; padding: 5px 0; margin-top: 4px; border: none; background: none; color: var(--accent); font-size: 12px; cursor: pointer; text-align: center; }
+.hist-toggle:hover { color: var(--accent-hover); }
+.hist-btn:hover { border-color: var(--accent); color: var(--accent); }
+.hist-btn.danger:hover:not(:disabled) { border-color: #b91c1c; background: #dc2626; color: #fff; }
+/* 打印页样式（打印弹窗中预览 & 实际打印） */
+@media print {
+  body { background: #fff; }
+  .print-sheet { page-break-after: always; padding: 10mm; }
+  .print-sheet:last-child { page-break-after: auto; }
+}
+
+/* ── 响应式 ── */
+@media (max-width: 600px) {
+  .container { padding: 14px 10px 12px; gap: 12px; }
+  .main-area { gap: 8px; flex-direction: column; align-items: center; }
+  .hint-panel { flex-direction: row; }
+  .header { justify-content: center; }
+}
+</style>
+</head>
+<body>
+
+<div class="container">
+  <!-- 顶部 -->
+  <div class="header">
+    <span class="title">数独</span>
+    <div class="control-group" id="sizeGroup">
+      <button class="ctrl-btn" data-size="4">4×4</button>
+      <button class="ctrl-btn" data-size="6">6×6</button>
+      <button class="ctrl-btn active" data-size="9">9×9</button>
+      <button class="ctrl-btn" data-size="16">16×16</button>
+    </div>
+    <div class="control-group" id="diffGroup">
+      <button class="ctrl-btn" data-diff="easy">初级</button>
+      <button class="ctrl-btn active" data-diff="medium">中级</button>
+      <button class="ctrl-btn" data-diff="hard">高级</button>
+    </div>
+    <button class="action-btn" id="newGameBtn">新游戏</button>
+    <button class="secondary-btn" id="printBtn">🖨 打印</button>
+    <button class="secondary-btn" id="helpBtn">? 玩法说明</button>
+  </div>
+
+  <!-- 主区域 -->
+  <div class="main-area">
+    <div class="board-outer"><div class="board-grid" id="board"></div></div>
+    <div class="hint-panel">
+      <button class="hint-btn" id="hintFillBtn">💡 填一个</button>
+      <button class="hint-btn" id="hintHighlightBtn">🔍 高亮提示</button>
+      <button class="hint-btn" id="hintReasonBtn">💭 解题分析</button>
+    </div>
+  </div>
+
+  <!-- 数字键盘 -->
+  <div class="num-pad-shell align-left" id="numPadShell">
+    <div class="num-pad" id="numPad"></div>
+    <button class="pad-side-btn" id="padSideBtn" type="button" aria-label="数字键盘切换到右侧" title="数字键盘切换到右侧">→</button>
+  </div>
+
+  <!-- 底部信息 -->
+  <div class="footer">
+    <span>⏱ <span class="timer" id="timer">00:00</span></span>
+    <span>已知: <span id="givensCount">0</span></span>
+    <label class="givens-control">目标已知<input class="givens-input" id="givensInput" type="number" min="1" step="1"></label>
+    <label class="givens-control">宫格色<select class="tone-select" id="boxToneSelect"></select></label>
+    <span>错误: <span class="error-count safe" id="errorCount">0</span></span>
+    <label class="setting-row">
+      <span class="toggle-switch"><input type="checkbox" id="highlightToggle" checked><span class="toggle-slider"></span></span>同数高亮
+    </label>
+    <label class="setting-row">
+      <span class="toggle-switch"><input type="checkbox" id="errorDisplayToggle" checked><span class="toggle-slider"></span></span>错误提示
+    </label>
+    <label class="setting-row">
+      <span class="toggle-switch"><input type="checkbox" id="strictToggle"><span class="toggle-slider"></span></span>答案校对
+    </label>
+    <label class="setting-row">
+      <span class="toggle-switch"><input type="checkbox" id="singlesToggle" checked><span class="toggle-slider"></span></span>唯一候选
+    </label>
+    <button class="secondary-btn" id="clearWrongBtn" disabled>一键清除错误</button>
+    <button class="secondary-btn" id="saveBtn">💾 保存进度</button>
+  </div>
+</div>
+
+<!-- 完成弹窗 -->
+<div class="overlay" id="winOverlay">
+  <div class="modal"><h2>🎉 恭喜完成！</h2><p style="color:#888;">你成功解出了这道数独</p><div class="time-result" id="resultTime">00:00</div><button id="playAgainBtn">再来一局</button></div>
+</div>
+
+<!-- 玩法说明弹窗 -->
+<div class="overlay" id="helpOverlay">
+  <div class="modal help-modal">
+    <h2>📖 玩法说明</h2>
+    <div class="help-content">
+      <div class="help-section"><h3>什么是数独</h3><p>标准数独是 9×9 棋盘，分成 <strong>9 个 3×3 小宫</strong>。另有 4×4（入门）和 6×6（过渡）可选。你需要把空格填满，让每行、每列、每个小宫里的数字都不重复。（4×4 用数字 1~4，6×6 用 1~6，9×9 用 1~9）</p></div>
+      <div class="help-section"><h3>规则</h3><ol><li><strong>每一行</strong>里数字不重复</li><li><strong>每一列</strong>里数字不重复</li><li><strong>每一个小宫</strong>（粗线框）里数字不重复</li></ol></div>
+      <div class="help-section"><h3>难度 & 尺寸</h3><p>三种尺寸 + 三种难度任意组合。尺寸越小越简单；同尺寸下，难度会同时参考已知数字数量和推理评分，不再只看给定数多少。</p></div>
+      <div class="help-section"><h3>怎么操作</h3><ul><li>点空格选中（蓝底），再点下方数字或按键盘 1~9 填入</li><li>Backspace / Delete / ✕ 擦除</li><li>方向键在格子间移动</li><li>题目自带数字是<strong>黑色加粗</strong>，不可修改</li></ul></div>
+      <div class="help-section"><h3>颜色含义</h3><ul><li><span class="color-dot given-dot"></span><strong>黑色加粗</strong>——题目给定数字</li><li><span class="color-dot user-dot"></span><strong>深灰细字</strong>——你填的数字</li><li><span class="color-dot hint-dot"></span><strong>绿色</strong>——提示帮你填的</li><li><span class="color-dot error-dot"></span><strong>红色</strong>——和同行/列/宫里的数字重复了</li><li><span class="color-dot same-dot"></span><strong>亮黄底</strong>——选中数字后，同数字会亮起，帮你判断位置</li></ul></div>
+      <div class="help-section"><h3>底部开关</h3><ul><li><strong>同数高亮</strong>——开：选中数字时相同数字亮起；关：不亮</li><li><strong>错误提示</strong>——开：错误格标红，显示当前盘面错误数；关：不标红不计错</li><li><strong>答案校对</strong>——开：和标准答案比对并用橙色角标标出错误；关：只检查直接冲突</li><li><strong>唯一候选</strong>——开：新题会尽量保证每一步都有一个单一候选格；关：只保证唯一解</li></ul></div>
+      <div class="help-section"><h3>打印功能</h3><p>点「打印」可选择尺寸、难度、题量，生成排版好的题目页，A4 纸打印出来在纸上做。</p></div>
+    </div>
+    <button id="helpCloseBtn">知道了</button>
+  </div>
+</div>
+
+<!-- 打印弹窗 -->
+<div class="overlay" id="printOverlay">
+  <div class="modal print-modal">
+    <h2>🖨 打印题目</h2>
+    <div class="print-row"><label>纸张</label><select id="printPaper"><option value="A4" selected>A4</option><option value="A5">A5</option><option value="Letter">Letter</option></select></div>
+    <div class="print-row"><label>尺寸</label><select id="printSize"><option value="4">4×4</option><option value="6">6×6</option><option value="9" selected>9×9</option><option value="16">16×16</option></select></div>
+    <div class="print-row"><label>难度</label><select id="printDiff"><option value="easy">初级</option><option value="medium">中级</option><option value="hard">高级</option></select></div>
+    <div class="print-row"><label>题量</label><select id="printCount"><option value="2" selected>2 道</option><option value="4">4 道</option><option value="8">8 道</option><option value="12">12 道</option><option value="16">16 道</option><option value="20">20 道</option><option value="24">24 道</option><option value="32">32 道</option><option value="40">40 道</option><option value="48">48 道</option><option value="64">64 道</option></select></div>
+    <div class="print-row"><label>每页</label><select id="printPerPage"><option value="1">1 道</option><option value="2" selected>2 道</option><option value="4">4 道</option></select></div>
+    <div class="print-row"><label>方向</label><select id="printOrient"><option value="portrait" selected>纵向</option><option value="landscape">横向</option></select></div>
+    <div class="print-row"><label>唯一候选</label><label class="setting-row"><span class="toggle-switch"><input type="checkbox" id="printSinglesToggle" checked><span class="toggle-slider"></span></span>开启</label></div>
+    <p style="font-size:12px;color:#999;margin-top:8px;">题目越多，格子自动越小；题目越少，格子越大。建议用 Chrome 打印，边距设为"无"。双面打印、长边翻转、短边翻转请在系统打印对话框中选择。</p>
+    <button id="printGoBtn" type="button">预览并打印</button>
+    <div class="history-list">
+      <div class="history-head">
+        <h3>📋 打印历史</h3>
+        <button class="hist-btn danger" id="clearHistoryBtn" type="button">全部清除</button>
+      </div>
+      <div id="historyEntries"></div>
+    </div>
+  </div>
+</div>
+
+<!-- 通用弹窗（替代 alert/confirm） -->
+<div class="overlay" id="dialogOverlay">
+  <div class="modal" style="max-width:360px;">
+    <p id="dialogMsg" style="font-size:15px;color:#333;margin:0 0 16px;"></p>
+    <div id="dialogBtns" style="display:flex;gap:10px;justify-content:center;"></div>
+  </div>
+</div>
+
+<!-- 解题分析弹窗 -->
+<div class="overlay" id="reasonOverlay">
+  <div class="modal reason-modal">
+    <h2>💭 解题分析</h2>
+    <div class="reason-content" id="reasonContent"></div>
+    <button id="reasonCloseBtn">知道了</button>
+  </div>
+</div>
+
+<script>
+if (window.top !== window.self) { document.body.remove(); throw new Error('不允许嵌入'); }
+
+// ==================== 引擎 ====================
+
+const BOARD_CONFIGS = {
+  4:  { boxRows: 2, boxCols: 2, givensTargets: { easy: 10, medium: 8, hard: 6 }, scoreBands: { easy: { min: 10, max: 18 }, medium: { min: 19, max: 28 }, hard: { min: 29, max: 45 } } },
+  6:  { boxRows: 2, boxCols: 3, givensTargets: { easy: 24, medium: 20, hard: 15 }, scoreBands: { easy: { min: 35, max: 50 }, medium: { min: 60, max: 85 }, hard: { min: 110, max: 150 } } },
+  9:  { boxRows: 3, boxCols: 3, givensTargets: { easy: 40, medium: 30, hard: 24 }, scoreBands: { easy: { min: 460, max: 560 }, medium: { min: 860, max: 1020 }, hard: { min: 1080, max: 1400 } } },
+  16: { boxRows: 4, boxCols: 4, givensTargets: { easy: 160, medium: 130, hard: 105 }, scoreBands: { easy: { min: 2550, max: 2850 }, medium: { min: 5400, max: 6000 }, hard: { min: 8800, max: 10100 } } },
+};
+
+const PAPER_SIZES = {
+  A4: { w: 210, h: 297 },
+  A5: { w: 148, h: 210 },
+  Letter: { w: 216, h: 279 },
+};
+
+const BOX_TONE_OPTIONS = {
+  green: { label: '浅绿', color: '#dcefdc' },
+  blue: { label: '浅蓝', color: '#dcecff' },
+  yellow: { label: 'Excel黄', color: '#ffff00' },
+  pink: { label: '浅粉', color: '#f6dde5' },
+  violet: { label: '浅紫', color: '#e9def7' },
+  peach: { label: '浅桃', color: '#f7e2d1' },
+};
+
+const PRINT_PER_PAGE_CAPS = {
+  A4: { 4: 4, 6: 4, 9: 2, 16: 1 },
+  A5: { 4: 2, 6: 2, 9: 1, 16: 1 },
+  Letter: { 4: 4, 6: 4, 9: 2, 16: 1 },
+};
+
+function createEmptyBoard(size) { return Array.from({ length: size }, () => Array(size).fill(0)); }
+function cloneBoard(b) { return b.map(r => [...r]); }
+
+function isValidPlacement(board, row, col, num, br, bc) {
+  const s = board.length;
+  for (let c = 0; c < s; c++) if (board[row][c] === num) return false;
+  for (let r = 0; r < s; r++) if (board[r][col] === num) return false;
+  const R = Math.floor(row / br) * br, C = Math.floor(col / bc) * bc;
+  for (let r = R; r < R + br; r++) for (let c = C; c < C + bc; c++) if (board[r][c] === num) return false;
+  return true;
+}
+
+function shuffle(arr) { const a = [...arr]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+
+function fillBoard(board, size, br, bc) {
+  for (let r = 0; r < size; r++) for (let c = 0; c < size; c++) {
+    if (board[r][c] === 0) {
+      for (const num of shuffle(Array.from({ length: size }, (_, i) => i + 1))) {
+        if (isValidPlacement(board, r, c, num, br, bc)) { board[r][c] = num; if (fillBoard(board, size, br, bc)) return true; board[r][c] = 0; }
+      }
+      return false;
+    }
+  }
+  return true;
+}
+
+function createSolvedBoard(size, br, bc) {
+  const nums = shuffle(Array.from({ length: size }, (_, i) => i + 1));
+  const rowBands = shuffle(Array.from({ length: size / br }, (_, i) => i));
+  const rows = rowBands.flatMap(b => shuffle(Array.from({ length: br }, (_, i) => b * br + i)));
+  const colStacks = shuffle(Array.from({ length: size / bc }, (_, i) => i));
+  const cols = colStacks.flatMap(s => shuffle(Array.from({ length: bc }, (_, i) => s * bc + i)));
+  return rows.map(r => cols.map(c => nums[(r * bc + Math.floor(r / br) + c) % size]));
+}
+
+function countSolutions(board, limit, size, br, bc) {
+  let count = 0;
+  function solve(b) { if (count >= limit) return; for (let r = 0; r < size; r++) for (let c = 0; c < size; c++) if (b[r][c] === 0) { for (let n = 1; n <= size; n++) { if (isValidPlacement(b, r, c, n, br, bc)) { b[r][c] = n; solve(b); b[r][c] = 0; if (count >= limit) return; } } return; } count++; }
+  solve(board); return count;
+}
+
+function getCandidates(board, row, col, br, bc) {
+  const s = board.length; if (board[row][col] !== 0) return [];
+  const used = new Set();
+  for (let c = 0; c < s; c++) if (board[row][c] !== 0) used.add(board[row][c]);
+  for (let r = 0; r < s; r++) if (board[r][col] !== 0) used.add(board[r][col]);
+  const R = Math.floor(row / br) * br, C = Math.floor(col / bc) * bc;
+  for (let r = R; r < R + br; r++) for (let c = C; c < C + bc; c++) if (board[r][c] !== 0) used.add(board[r][c]);
+  const cands = []; for (let n = 1; n <= s; n++) if (!used.has(n)) cands.push(n);
+  return cands;
+}
+
+function findEasiestCell(board, br, bc) {
+  const s = board.length; let min = s + 1, best = null;
+  for (let r = 0; r < s; r++) for (let c = 0; c < s; c++) if (board[r][c] === 0) { const cands = getCandidates(board, r, c, br, bc); if (cands.length < min) { min = cands.length; best = { row: r, col: c }; if (min === 1) return best; } }
+  return best;
+}
+
+function isSinglesSolvable(board, size, br, bc) {
+  let remaining = 0;
+  for (let r = 0; r < size; r++) for (let c = 0; c < size; c++) if (board[r][c] === 0) remaining++;
+  while (remaining > 0) {
+    let filled = false;
+    for (let r = 0; r < size && !filled; r++) {
+      for (let c = 0; c < size; c++) {
+        if (board[r][c] !== 0) continue;
+        const cands = getCandidates(board, r, c, br, bc);
+        if (cands.length === 1) {
+          board[r][c] = cands[0];
+          remaining--;
+          filled = true;
+          break;
+        }
+      }
+    }
+    if (!filled) return false;
+  }
+  return true;
+}
+
+function evaluatePuzzleDifficulty(board, solution, size, br, bc) {
+  const work = cloneBoard(board);
+  const givens = board.flat().filter(Boolean).length;
+  let score = 0;
+  let steps = 0;
+  let peakBranch = 1;
+
+  while (true) {
+    let best = null;
+    let unresolved = 0;
+    let singles = 0;
+    let candidatePressure = 0;
+
+    for (let r = 0; r < size; r++) {
+      for (let c = 0; c < size; c++) {
+        if (work[r][c] !== 0) continue;
+        const cands = getCandidates(work, r, c, br, bc);
+        if (cands.length === 0) return { score: Number.POSITIVE_INFINITY, steps, peakBranch };
+        unresolved++;
+        if (cands.length === 1) singles++;
+        candidatePressure += Math.max(0, cands.length - 1);
+        peakBranch = Math.max(peakBranch, cands.length);
+        if (!best || cands.length < best.cands.length) best = { row: r, col: c, cands };
+      }
+    }
+
+    if (!best) break;
+
+    score += unresolved * 0.45;
+    score += candidatePressure * 0.18;
+    score += (best.cands.length - 1) * 2.2;
+    if (singles <= 1) score += 1.5;
+
+    work[best.row][best.col] = solution ? solution[best.row][best.col] : best.cands[0];
+    steps++;
+  }
+
+  score += peakBranch * 1.5;
+  return { score: Math.round(score), steps, peakBranch, givens, blanks: size * size - givens };
+}
+
+function scoreBandDistance(score, band) {
+  if (score < band.min) return band.min - score;
+  if (score > band.max) return score - band.max;
+  return 0;
+}
+
+function normalizeGivensTarget(size, target) {
+  const total = size * size;
+  const n = parseInt(target);
+  if (!Number.isFinite(n)) return null;
+  return Math.max(1, Math.min(total, n));
+}
+
+function defaultGivensTarget(size, difficulty) {
+  return BOARD_CONFIGS[size].givensTargets[difficulty];
+}
+
+function generatePuzzle(size, difficulty, singlesOnly = true, givensTarget) {
+  const cfg = BOARD_CONFIGS[size];
+  const target = normalizeGivensTarget(size, givensTarget) || defaultGivensTarget(size, difficulty);
+  const band = cfg.scoreBands[difficulty];
+  const maxAttempts = size >= 16 ? 12 : 24;
+  let best = null;
+  let bestDistance = Number.POSITIVE_INFINITY;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const solution = createSolvedBoard(size, cfg.boxRows, cfg.boxCols);
+    const puzzle = cloneBoard(solution);
+    const positions = []; for (let r = 0; r < size; r++) for (let c = 0; c < size; c++) positions.push({ r, c });
+    const shuffled = shuffle(positions);
+    let givenCount = size * size;
+
+    for (const { r, c } of shuffled) {
+      if (givenCount <= target) break;
+      const saved = puzzle[r][c]; puzzle[r][c] = 0;
+      const keepRemoval = (singlesOnly || size >= 16)
+        ? isSinglesSolvable(cloneBoard(puzzle), size, cfg.boxRows, cfg.boxCols)
+        : countSolutions(cloneBoard(puzzle), 2, size, cfg.boxRows, cfg.boxCols) === 1;
+      if (!keepRemoval) puzzle[r][c] = saved;
+      else givenCount--;
+    }
+
+    const metrics = evaluatePuzzleDifficulty(puzzle, solution, size, cfg.boxRows, cfg.boxCols);
+    const distance = Math.abs(metrics.givens - target) * 10000 + scoreBandDistance(metrics.score, band);
+    if (!best || distance < bestDistance) {
+      best = { puzzle, solution, metrics };
+      bestDistance = distance;
+    }
+    if (distance === 0) return best;
+  }
+
+  return best;
+}
+
+function hasConflict(board, row, col, br, bc) {
+  const num = board[row][col]; if (num === 0) return false;
+  const s = board.length;
+  for (let c = 0; c < s; c++) if (c !== col && board[row][c] === num) return true;
+  for (let r = 0; r < s; r++) if (r !== row && board[r][col] === num) return true;
+  const R = Math.floor(row / br) * br, C = Math.floor(col / bc) * bc;
+  for (let r = R; r < R + br; r++) for (let c = C; c < C + bc; c++) if ((r !== row || c !== col) && board[r][c] === num) return true;
+  return false;
+}
+
+// ==================== 状态 ====================
+
+const state = {
+  boardSize: 9, difficulty: 'medium',
+  puzzle: null, solution: null, userBoard: null, givenMask: null, hintFilledMask: null,
+  selectedRow: -1, selectedCol: -1,
+  errors: 0, timerSeconds: 0, timerInterval: null, gameOver: false,
+  highlightedHintCell: null,
+  highlightEnabled: true, errorDisplay: true, strictMode: false, singlesOnly: true,
+  keypadSide: 'left',
+  givensTarget: null,
+  boxToneKey: 'green',
+};
+
+function boxRows() { return BOARD_CONFIGS[state.boardSize].boxRows; }
+function boxCols() { return BOARD_CONFIGS[state.boardSize].boxCols; }
+
+// ==================== UI ====================
+
+const boardEl = document.getElementById('board');
+const timerEl = document.getElementById('timer');
+const errorCountEl = document.getElementById('errorCount');
+const givensCountEl = document.getElementById('givensCount');
+const givensInputEl = document.getElementById('givensInput');
+const boxToneSelectEl = document.getElementById('boxToneSelect');
+const numPad = document.getElementById('numPad');
+const numPadShell = document.getElementById('numPadShell');
+const padSideBtn = document.getElementById('padSideBtn');
+const clearWrongBtn = document.getElementById('clearWrongBtn');
+const appContainer = document.querySelector('.container');
+const winOverlay = document.getElementById('winOverlay');
+const resultTimeEl = document.getElementById('resultTime');
+
+function buildBoardDOM() {
+  const size = state.boardSize;
+  const br = boxRows(), bc = boxCols();
+  boardEl.replaceChildren();
+  boardEl.style.setProperty('--box-grid-rows', size / br);
+  boardEl.style.setProperty('--box-grid-cols', size / bc);
+  boardEl.style.setProperty('--box-cell-rows', br);
+  boardEl.style.setProperty('--box-cell-cols', bc);
+
+  // 自适应格子大小
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const maxBoardPx = Math.min(vw * 0.75, vh * 0.7);
+  const cellPx = Math.floor(maxBoardPx / size);
+  // 限制最小/最大
+  const clampedCell = Math.max(28, Math.min(cellPx, 56));
+
+  for (let boxR = 0; boxR < size / br; boxR++) {
+    for (let boxC = 0; boxC < size / bc; boxC++) {
+      const box = document.createElement('div');
+      box.className = 'box' + (((boxR + boxC) % 2 === 1) ? ' box-tone-b' : '');
+      for (let r = boxR * br; r < boxR * br + br; r++) {
+        for (let c = boxC * bc; c < boxC * bc + bc; c++) {
+          const cell = document.createElement('div'); cell.className = 'cell';
+          cell.dataset.row = r; cell.dataset.col = c;
+          cell.style.width = clampedCell + 'px';
+          cell.style.height = clampedCell + 'px';
+          cell.style.fontSize = (size <= 4 ? 20 : size <= 6 ? 17 : Math.max(14, clampedCell * 0.42)) + 'px';
+          cell.addEventListener('click', () => onCellClick(r, c));
+          box.appendChild(cell);
+        }
+      }
+      boardEl.appendChild(box);
+    }
+  }
+
+  // 重建数字键盘
+  numPad.replaceChildren();
+  for (let n = 1; n <= size; n++) {
+    const btn = document.createElement('button'); btn.className = 'num-btn';
+    btn.textContent = n; btn.dataset.num = n; numPad.appendChild(btn);
+  }
+  const erase = document.createElement('button'); erase.className = 'erase-btn';
+  erase.textContent = '✕'; erase.id = 'eraseBtn'; erase.title = '擦除'; numPad.appendChild(erase);
+}
+
+function renderBoard() {
+  const size = state.boardSize;
+  const br = boxRows(), bc = boxCols();
+  const cells = boardEl.querySelectorAll('.cell');
+  const selectedNum = state.selectedRow >= 0 && state.userBoard
+    ? state.userBoard[state.selectedRow][state.selectedCol] : 0;
+
+  cells.forEach(cell => {
+    const r = parseInt(cell.dataset.row), c = parseInt(cell.dataset.col);
+    const val = state.userBoard[r][c];
+    cell.replaceChildren();
+    if (val !== 0) {
+      cell.appendChild(document.createTextNode(String(val)));
+    }
+    cell.className = 'cell';
+    if (state.givenMask[r][c]) cell.classList.add('given');
+    else if (state.hintFilledMask[r][c]) cell.classList.add('hint-filled');
+    else if (val !== 0) cell.classList.add('user-filled');
+    const isSelected = r === state.selectedRow && c === state.selectedCol;
+    if (isSelected) cell.classList.add('selected');
+    if (state.highlightedHintCell && state.highlightedHintCell.row === r && state.highlightedHintCell.col === c) cell.classList.add('highlight-hint');
+    if (state.highlightEnabled && selectedNum > 0 && val === selectedNum) cell.classList.add('same-number');
+    // 错误标记
+    if (!state.givenMask[r][c] && !state.hintFilledMask[r][c] && val !== 0) {
+      const isError = state.strictMode
+        ? (val !== state.solution[r][c])
+        : hasConflict(state.userBoard, r, c, br, bc);
+      if (isError) {
+        if (state.strictMode) { cell.classList.add('answer-wrong'); }
+        else if (state.errorDisplay) { cell.classList.add('error'); }
+      }
+    }
+  });
+}
+
+function countCurrentErrors() {
+  if (!state.userBoard || !state.solution || !state.errorDisplay) return 0;
+  const br = boxRows(), bc = boxCols();
+  let count = 0;
+  for (let r = 0; r < state.boardSize; r++) {
+    for (let c = 0; c < state.boardSize; c++) {
+      const val = state.userBoard[r][c];
+      if (val === 0 || state.givenMask[r][c] || state.hintFilledMask[r][c]) continue;
+      if (state.strictMode) { if (val !== state.solution[r][c]) count++; }
+      else { if (hasConflict(state.userBoard, r, c, br, bc)) count++; }
+    }
+  }
+  return count;
+}
+
+function renderTimer() { const m = Math.floor(state.timerSeconds / 60), s = state.timerSeconds % 60; timerEl.textContent = String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0'); }
+function renderErrors() { const n = countCurrentErrors(); errorCountEl.textContent = n; errorCountEl.className = 'error-count' + (n === 0 ? ' safe' : ''); }
+function countGivens(board) {
+  return board ? board.flat().filter(Boolean).length : 0;
+}
+function applyBoxTone() {
+  const tone = BOX_TONE_OPTIONS[state.boxToneKey] || BOX_TONE_OPTIONS.green;
+  document.documentElement.style.setProperty('--box-tone-b', tone.color);
+  if (boxToneSelectEl.value !== state.boxToneKey) boxToneSelectEl.value = state.boxToneKey;
+}
+function initBoxToneOptions() {
+  boxToneSelectEl.replaceChildren();
+  Object.entries(BOX_TONE_OPTIONS).forEach(([key, tone]) => {
+    const option = document.createElement('option');
+    option.value = key;
+    option.textContent = tone.label;
+    option.style.backgroundColor = tone.color;
+    option.style.color = '#111';
+    boxToneSelectEl.appendChild(option);
+  });
+}
+function syncGivensControls() {
+  const total = state.boardSize * state.boardSize;
+  const defaultTarget = defaultGivensTarget(state.boardSize, state.difficulty);
+  const target = normalizeGivensTarget(state.boardSize, state.givensTarget) || defaultTarget;
+  givensInputEl.min = 1;
+  givensInputEl.max = total;
+  givensInputEl.value = target;
+  givensCountEl.textContent = countGivens(state.puzzle);
+}
+function renderAll() { renderBoard(); renderTimer(); renderErrors(); syncGivensControls(); applyBoxTone(); }
+
+// ==================== 游戏逻辑 ====================
+
+function startGame(size, difficulty, prePuzzle, preSolution) {
+  stopTimer();
+  const rebuildDOM = size !== state.boardSize;
+  state.boardSize = size || state.boardSize;
+  state.difficulty = difficulty || state.difficulty;
+  state.timerSeconds = 0; state.selectedRow = -1; state.selectedCol = -1;
+  state.gameOver = false; state.highlightedHintCell = null;
+  let puzzle, solution;
+  if (prePuzzle && preSolution) {
+    puzzle = prePuzzle; solution = preSolution;
+  } else {
+    const gen = generatePuzzle(state.boardSize, state.difficulty, state.singlesOnly, state.givensTarget);
+    puzzle = gen.puzzle; solution = gen.solution;
+  }
+  state.puzzle = puzzle; state.solution = solution;
+  state.userBoard = cloneBoard(puzzle);
+  state.givenMask = puzzle.map(r => r.map(v => v !== 0));
+  state.hintFilledMask = puzzle.map(r => r.map(() => false));
+  if (rebuildDOM) buildBoardDOM();
+  updateSizeUI(); updateDiffUI(); renderAll(); startTimer(); schedulePhoneScale();
+  try { localStorage.removeItem('sudoku_saved_game'); } catch(e) {}
+}
+
+function stopTimer() { if (state.timerInterval) { clearInterval(state.timerInterval); state.timerInterval = null; } }
+function startTimer() { stopTimer(); state.timerInterval = setInterval(() => { if (!state.gameOver) { state.timerSeconds++; renderTimer(); } }, 1000); }
+function updateSizeUI() { document.querySelectorAll('#sizeGroup .ctrl-btn').forEach(b => b.classList.toggle('active', parseInt(b.dataset.size) === state.boardSize)); }
+function updateDiffUI() { document.querySelectorAll('#diffGroup .ctrl-btn').forEach(b => b.classList.toggle('active', b.dataset.diff === state.difficulty)); }
+function updatePadSideUI() {
+  const isRight = state.keypadSide === 'right';
+  numPadShell.classList.toggle('align-left', !isRight);
+  numPadShell.classList.toggle('align-right', isRight);
+  padSideBtn.textContent = isRight ? '←' : '→';
+  padSideBtn.title = isRight ? '数字键盘切换到左侧' : '数字键盘切换到右侧';
+  padSideBtn.setAttribute('aria-label', padSideBtn.title);
+}
+function isPhoneDevice() {
+  const mobileHint = navigator.userAgentData && navigator.userAgentData.mobile === true;
+  const coarsePointer = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+  const shortestSide = Math.min(window.screen.width || window.innerWidth, window.screen.height || window.innerHeight);
+  return mobileHint || (coarsePointer && shortestSide <= 600);
+}
+function updatePhoneLayout() {
+  document.body.classList.toggle('phone-layout', isPhoneDevice());
+}
+function updatePhoneScale() {
+  appContainer.style.zoom = '1';
+  if (!document.body.classList.contains('phone-layout')) return;
+  const availableW = Math.max(1, window.innerWidth - 8);
+  const availableH = Math.max(1, window.innerHeight - 8);
+  const scale = Math.min(1, availableW / appContainer.scrollWidth, availableH / appContainer.scrollHeight);
+  appContainer.style.zoom = String(Math.max(0.6, scale));
+}
+function schedulePhoneScale() {
+  requestAnimationFrame(() => requestAnimationFrame(updatePhoneScale));
+}
+function updateStrictUI() {
+  clearWrongBtn.disabled = !state.strictMode;
+}
+
+function onCellClick(row, col) {
+  if (state.gameOver) return;
+  state.selectedRow = row; state.selectedCol = col;
+  if (state.highlightedHintCell && state.highlightedHintCell.row === row && state.highlightedHintCell.col === col) state.highlightedHintCell = null;
+  renderBoard();
+}
+
+function placeNumber(num) {
+  if (state.gameOver || state.selectedRow < 0 || state.selectedCol < 0) return;
+  const r = state.selectedRow, c = state.selectedCol;
+  if (state.givenMask[r][c] || state.hintFilledMask[r][c]) return;
+  placeNumberCore(num);
+}
+
+function placeNumberCore(num) {
+  const r = state.selectedRow, c = state.selectedCol;
+  const size = state.boardSize, br = boxRows(), bc = boxCols();
+  let isError = false;
+  if (num === 0) { state.userBoard[r][c] = 0; }
+  else {
+    state.userBoard[r][c] = num;
+    if (state.errorDisplay) {
+      isError = state.strictMode ? (state.solution[r][c] !== num) : hasConflict(state.userBoard, r, c, br, bc);
+    }
+  }
+  state.highlightedHintCell = null;
+  renderBoard(); renderErrors(); checkWin();
+
+  if (!isError && num !== 0 && document.getElementById('reasonOverlay').classList.contains('show')) {
+    showConfirm('已填入正确答案。还需要继续提示下一格吗？',
+      function() {
+        const nextCell = findEasiestCell(state.userBoard, br, bc);
+        if (nextCell) showReasonForCell(nextCell.row, nextCell.col);
+        else closeReason();
+      },
+      function() { closeReason(); }
+    );
+  }
+  autoSave();
+}
+
+function checkWin() {
+  const size = state.boardSize, br = boxRows(), bc = boxCols();
+  for (let r = 0; r < size; r++) for (let c = 0; c < size; c++) { if (state.userBoard[r][c] === 0) return; if (hasConflict(state.userBoard, r, c, br, bc)) return; }
+  state.gameOver = true; stopTimer();
+  resultTimeEl.textContent = timerEl.textContent; winOverlay.classList.add('show');
+  try { localStorage.removeItem('sudoku_saved_game'); } catch(e) {}
+}
+
+function hintFill() {
+  if (state.gameOver) return;
+  const cell = findEasiestCell(state.userBoard, boxRows(), boxCols());
+  if (!cell) { showAlert('没有空格了！'); return; }
+  state.userBoard[cell.row][cell.col] = state.solution[cell.row][cell.col];
+  state.hintFilledMask[cell.row][cell.col] = true;
+  state.selectedRow = cell.row; state.selectedCol = cell.col; state.highlightedHintCell = null;
+  renderBoard(); renderErrors(); checkWin();
+  autoSave();
+}
+
+function hintHighlight() {
+  if (state.gameOver) return;
+  const cell = findEasiestCell(state.userBoard, boxRows(), boxCols());
+  if (!cell) { showAlert('没有空格了！'); return; }
+  state.highlightedHintCell = cell; state.selectedRow = cell.row; state.selectedCol = cell.col;
+  renderBoard();
+}
+
+function clearWrongAnswers() {
+  if (!state.strictMode || state.gameOver) return;
+  for (let r = 0; r < state.boardSize; r++) {
+    for (let c = 0; c < state.boardSize; c++) {
+      if (state.givenMask[r][c] || state.hintFilledMask[r][c]) continue;
+      if (state.userBoard[r][c] !== 0 && state.userBoard[r][c] !== state.solution[r][c]) {
+        state.userBoard[r][c] = 0;
+      }
+    }
+  }
+  state.highlightedHintCell = null;
+  renderBoard();
+  renderErrors();
+  autoSave();
+}
+
+// ==================== 打印 ====================
+
+function calcPrintLayout(size, count, pageW, pageH, perPageLimit) {
+  const gapMM = 5, boardExtraMM = 3;
+  const pageCount = Math.max(1, Math.min(count, perPageLimit || count));
+  const ranges = {
+    4:  { max: 26, min: 8  },
+    6:  { max: 20, min: 5  },
+    9:  { max: 18, min: 4.2 },
+    16: { max: 10, min: 2.6 },
+  };
+  const r = ranges[size];
+  let best = null, bestScore = 0;
+
+  for (let perRow = 1; perRow <= pageCount; perRow++) {
+    const rowsNeeded = Math.ceil(pageCount / perRow);
+    const usableW = pageW - (perRow - 1) * gapMM;
+    const usableH = pageH - (rowsNeeded - 1) * gapMM;
+    const cellByW = (usableW / perRow - boardExtraMM) / size;
+    const cellByH = (usableH / rowsNeeded - boardExtraMM) / size;
+    const cellMM = Math.min(cellByW, cellByH);
+    if (cellMM < r.min) continue;
+    const clamped = Math.min(cellMM, r.max);
+
+    const puzzleW = size * clamped + boardExtraMM;
+    const totalW = perRow * puzzleW + (perRow - 1) * gapMM;
+    const widthFill = Math.min(1, totalW / pageW);
+    const score = clamped * (0.5 + 0.5 * widthFill);
+
+    if (!best || score > bestScore) {
+      best = { cellMM: clamped, perRow, rowsPerPage: rowsNeeded, perPage: perRow * rowsNeeded };
+      bestScore = score;
+    }
+  }
+
+  if (best) return best;
+
+  const fallbackCell = r.min;
+  const perRow = Math.max(1, Math.floor((pageW + gapMM) / (size * fallbackCell + boardExtraMM + gapMM)));
+  const rowsNeeded = Math.ceil(pageCount / perRow);
+  return { cellMM: fallbackCell, perRow, rowsPerPage: rowsNeeded, perPage: perRow * rowsNeeded };
+}
+
+function printPerPageCap(paper, size) {
+  return (PRINT_PER_PAGE_CAPS[paper] && PRINT_PER_PAGE_CAPS[paper][size]) || 1;
+}
+
+function updatePrintPerPageOptions() {
+  const paper = document.getElementById('printPaper').value;
+  const size = parseInt(document.getElementById('printSize').value);
+  const select = document.getElementById('printPerPage');
+  const current = parseInt(select.value) || 2;
+  const cap = printPerPageCap(paper, size);
+  select.replaceChildren();
+  [1, 2, 4].filter(n => n <= cap).forEach(n => {
+    const option = document.createElement('option');
+    option.value = String(n);
+    option.textContent = n + ' 道';
+    select.appendChild(option);
+  });
+  select.value = String(Math.min(current, cap));
+}
+
+function generatePrintPage(size, difficulty, count, orientation, paper, pregenerated, perPageLimit, singlesOnly = true) {
+  const cfg = BOARD_CONFIGS[size];
+  const br = cfg.boxRows, bc = cfg.boxCols;
+
+  const paperSize = PAPER_SIZES[paper] || PAPER_SIZES.A4;
+  const isLandscape = orientation === 'landscape';
+  const pageW = (isLandscape ? paperSize.h : paperSize.w) - 16;
+  const pageH = (isLandscape ? paperSize.w : paperSize.h) - 16;
+  const cappedPerPage = Math.min(perPageLimit || count, printPerPageCap(paper, size));
+
+  const requestedPerPage = Math.max(1, Math.min(count, cappedPerPage));
+  const layout = calcPrintLayout(size, count, pageW, pageH, requestedPerPage);
+  const { cellMM, perRow, rowsPerPage, perPage } = layout;
+  const puzzlesPerSheet = Math.max(1, Math.min(requestedPerPage, perPage));
+
+  let html = '<html><head><meta charset="UTF-8"><title>数独打印</title><style>';
+  html += '@page { size: ' + paper + ' ' + (isLandscape ? 'landscape' : 'portrait') + '; margin: 8mm; }';
+  html += 'body { font-family: -apple-system, sans-serif; margin: 0; }';
+  html += '.page { page-break-after: always; padding: 3mm 0; }';
+  html += '.page:last-child { page-break-after: auto; }';
+  html += '.page-title { text-align: center; font-size: 14px; margin-bottom: 4mm; color: #333; }';
+  html += '.grid { display: grid; grid-template-columns: repeat(' + perRow + ', max-content); justify-content: center; gap: 5mm; }';
+  html += '.puzzle { text-align: center; }';
+  html += '.puzzle-label { font-size: 9px; color: #999; margin-bottom: 1.5mm; }';
+  html += '.puzzle-board table { border-collapse: collapse; border: 2.5px solid #000; }';
+  html += '.puzzle-board td { width: ' + (cellMM * 0.95).toFixed(1) + 'mm; height: ' + (cellMM * 0.95).toFixed(1) + 'mm; text-align: center; vertical-align: middle; font-size: ' + (cellMM * 0.95 * 0.55).toFixed(1) + 'mm; border: 1px solid #999; empty-cells: show; }';
+  html += '.puzzle-board .thick-right { border-right: 2.5px solid #000; }';
+  html += '.puzzle-board .thick-bottom { border-bottom: 2.5px solid #000; }';
+  html += '.puzzle-board .thick-top { border-top: 2.5px solid #000; }';
+  html += '.puzzle-board .thick-left { border-left: 2.5px solid #000; }';
+  html += '</style></head><body>';
+
+  for (let p = 0; p < count; p += puzzlesPerSheet) {
+    html += '<div class="page"><div class="grid">';
+    for (let i = p; i < Math.min(p + puzzlesPerSheet, count); i++) {
+      html += '<div class="puzzle"><div class="puzzle-board"><table>';
+      const puzzle = (pregenerated && pregenerated[i]) ? pregenerated[i].puzzle : generatePuzzle(size, difficulty, singlesOnly).puzzle;
+      for (let r = 0; r < size; r++) {
+        html += '<tr>';
+        for (let c = 0; c < size; c++) {
+          let cls = '';
+          if (c % bc === 0) cls += ' thick-left';
+          if (c === size - 1) cls += ' thick-right';
+          if (r % br === 0) cls += ' thick-top';
+          if (r === size - 1) cls += ' thick-bottom';
+          const val = Number(puzzle[r][c]) || 0;
+          html += '<td class="' + cls + '">' + (val !== 0 ? val : '') + '</td>';
+        }
+        html += '</tr>';
+      }
+      html += '</table></div></div>';
+    }
+    html += '</div></div>';
+  }
+
+  html += '</body></html>';
+  return html;
+}
+
+function doPrint(pregenerated) {
+  const paper = pregenerated ? (pregenerated.paper || 'A4') : document.getElementById('printPaper').value;
+  const size = pregenerated ? pregenerated.size : parseInt(document.getElementById('printSize').value);
+  const difficulty = pregenerated ? pregenerated.difficulty : document.getElementById('printDiff').value;
+  const count = pregenerated ? pregenerated.count : parseInt(document.getElementById('printCount').value);
+  const orientation = pregenerated ? pregenerated.orientation : document.getElementById('printOrient').value;
+  const rawPerPage = pregenerated ? (pregenerated.perPage || Math.min(2, count)) : parseInt(document.getElementById('printPerPage').value);
+  const perPage = Math.min(rawPerPage, printPerPageCap(paper, size), count);
+  const singlesOnly = pregenerated ? (pregenerated.singlesOnly !== false) : document.getElementById('printSinglesToggle').checked;
+
+  let puzzles;
+  if (pregenerated) {
+    puzzles = pregenerated.puzzles;
+  } else {
+    puzzles = [];
+    for (let i = 0; i < count; i++) {
+      puzzles.push(generatePuzzle(size, difficulty, singlesOnly));
+    }
+    const entry = {
+      id: Date.now(),
+      paper, size, difficulty, count, orientation, perPage, singlesOnly,
+      puzzles: puzzles.map(p => ({ puzzle: p.puzzle, solution: p.solution })),
+      time: new Date().toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+    };
+    saveHistory(entry);
+  }
+
+  const html = generatePrintPage(size, difficulty, count, orientation, paper, puzzles, perPage, singlesOnly);
+  const iframe = document.createElement('iframe');
+  iframe.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:0;height:0;border:none;';
+  iframe.srcdoc = html;
+  document.body.appendChild(iframe);
+  iframe.onload = function() {
+    const iw = iframe.contentWindow;
+    iw.onafterprint = function() { document.body.removeChild(iframe); };
+    setTimeout(function() { iw.focus(); iw.print(); }, 400);
+  };
+}
+
+// ==================== 解题分析 ====================
+
+function showReason() {
+  if (state.gameOver) return;
+  const br = boxRows(), bc = boxCols();
+  let row, col;
+
+  // 用户已选中空格 → 用选中的格；否则 → 自动找最容易的
+  if (state.selectedRow >= 0 && state.selectedCol >= 0 &&
+      state.userBoard[state.selectedRow][state.selectedCol] === 0 &&
+      !state.givenMask[state.selectedRow][state.selectedCol]) {
+    row = state.selectedRow;
+    col = state.selectedCol;
+  } else {
+    const cell = findEasiestCell(state.userBoard, br, bc);
+    if (!cell) { showAlert('没有空格了！'); return; }
+    row = cell.row;
+    col = cell.col;
+  }
+
+  showReasonForCell(row, col);
+}
+
+function showReasonForCell(row, col) {
+  const br = boxRows(), bc = boxCols();
+  const size = state.boardSize;
+
+  const rowNums = [];
+  for (let c = 0; c < size; c++) { const v = state.userBoard[row][c]; if (v !== 0) rowNums.push(v); }
+
+  const colNums = [];
+  for (let r = 0; r < size; r++) { const v = state.userBoard[r][col]; if (v !== 0) colNums.push(v); }
+
+  const boxNums = [];
+  const boxR = Math.floor(row / br) * br;
+  const boxC = Math.floor(col / bc) * bc;
+  for (let r = boxR; r < boxR + br; r++) {
+    for (let c = boxC; c < boxC + bc; c++) {
+      const v = state.userBoard[r][c];
+      if (v !== 0 && (r !== row || c !== col)) boxNums.push(v);
+    }
+  }
+
+  const candidates = getCandidates(state.userBoard, row, col, br, bc);
+  const boxNum = Math.floor(row / br) * (size / bc) + Math.floor(col / bc) + 1;
+
+  const container = document.getElementById('reasonContent');
+  container.replaceChildren();
+
+  const addrEl = document.createElement('div');
+  addrEl.className = 'cell-addr';
+  addrEl.textContent = '📍 第' + (row + 1) + '行 第' + (col + 1) + '列（第' + boxNum + '宫）';
+  container.appendChild(addrEl);
+
+  const rowEl = document.createElement('div');
+  rowEl.textContent = '同行（第' + (row + 1) + '行）已有：' + (rowNums.length > 0 ? rowNums.join('、') : '无');
+  container.appendChild(rowEl);
+
+  const colEl = document.createElement('div');
+  colEl.textContent = '同列（第' + (col + 1) + '列）已有：' + (colNums.length > 0 ? colNums.join('、') : '无');
+  container.appendChild(colEl);
+
+  const boxEl = document.createElement('div');
+  boxEl.textContent = '同宫（第' + boxNum + '宫）已有：' + (boxNums.length > 0 ? boxNums.join('、') : '无');
+  container.appendChild(boxEl);
+
+  if (candidates.length === 1) {
+    const concEl = document.createElement('div');
+    concEl.className = 'conclusion';
+    concEl.appendChild(document.createTextNode('→ 排除后只剩 '));
+    const strong1 = document.createElement('strong');
+    strong1.textContent = String(candidates[0]);
+    concEl.appendChild(strong1);
+    concEl.appendChild(document.createTextNode('，该格只能是 '));
+    const strong2 = document.createElement('strong');
+    strong2.textContent = String(candidates[0]);
+    concEl.appendChild(strong2);
+    container.appendChild(concEl);
+  } else {
+    const candEl = document.createElement('div');
+    candEl.className = 'candidates';
+    candEl.textContent = '排除后候选：' + candidates.join('、') + '（' + candidates.length + ' 个可能）';
+    container.appendChild(candEl);
+    const hintEl = document.createElement('div');
+    hintEl.style.color = '#888';
+    hintEl.style.marginTop = '4px';
+    hintEl.textContent = '暂不能唯一确定，需观察其他线索。';
+    container.appendChild(hintEl);
+  }
+
+  document.getElementById('reasonOverlay').classList.add('show');
+
+  state.highlightedHintCell = { row, col };
+  state.selectedRow = row;
+  state.selectedCol = col;
+  renderBoard();
+}
+
+function closeReason() {
+  document.getElementById('reasonOverlay').classList.remove('show');
+  state.highlightedHintCell = null;
+  renderBoard();
+}
+
+// ==================== 通用弹窗 ====================
+
+function showAlert(msg, cb) {
+  document.getElementById('dialogMsg').textContent = msg;
+  const btns = document.getElementById('dialogBtns');
+  btns.replaceChildren();
+  const okBtn = document.createElement('button');
+  okBtn.id = 'dialogOkBtn';
+  okBtn.textContent = '确定';
+  btns.appendChild(okBtn);
+  document.getElementById('dialogOverlay').classList.add('show');
+  okBtn.onclick = function() {
+    document.getElementById('dialogOverlay').classList.remove('show');
+    if (cb) cb();
+  };
+}
+
+function showConfirm(msg, onOk, onCancel) {
+  document.getElementById('dialogMsg').textContent = msg;
+  const btns = document.getElementById('dialogBtns');
+  btns.replaceChildren();
+  const cancelBtn = document.createElement('button');
+  cancelBtn.className = 'secondary-btn';
+  cancelBtn.id = 'dialogCancelBtn';
+  cancelBtn.style.marginTop = '0';
+  cancelBtn.textContent = '取消';
+  btns.appendChild(cancelBtn);
+  const okBtn = document.createElement('button');
+  okBtn.className = 'action-btn';
+  okBtn.id = 'dialogOkBtn';
+  okBtn.style.marginTop = '0';
+  okBtn.textContent = '确定';
+  btns.appendChild(okBtn);
+  document.getElementById('dialogOverlay').classList.add('show');
+  okBtn.onclick = function() {
+    document.getElementById('dialogOverlay').classList.remove('show');
+    if (onOk) onOk();
+  };
+  cancelBtn.onclick = function() {
+    document.getElementById('dialogOverlay').classList.remove('show');
+    if (onCancel) onCancel();
+  };
+}
+
+// ==================== 存档 ====================
+
+function doSave() {
+  const saveData = {
+    boardSize: state.boardSize,
+    difficulty: state.difficulty,
+    puzzle: state.puzzle,
+    solution: state.solution,
+    userBoard: state.userBoard,
+    givenMask: state.givenMask,
+    hintFilledMask: state.hintFilledMask,
+    errors: state.errors,
+    timerSeconds: state.timerSeconds,
+    highlightEnabled: state.highlightEnabled,
+    errorDisplay: state.errorDisplay,
+    strictMode: state.strictMode,
+    singlesOnly: state.singlesOnly,
+    givensTarget: normalizeGivensTarget(state.boardSize, state.givensTarget),
+    boxToneKey: state.boxToneKey,
+    savedAt: Date.now()
+  };
+  try { localStorage.setItem('sudoku_saved_game', JSON.stringify(saveData)); } catch(e) {}
+}
+
+function autoSave() {
+  if (state.gameOver || !state.puzzle || !isBoardModified()) return;
+  doSave();
+}
+
+function manualSave() {
+  if (state.gameOver || !state.puzzle) { showAlert('游戏尚未开始。'); return; }
+  doSave(); // 手动保存不检查 isBoardModified，即使没改盘面也存
+  const btn = document.getElementById('saveBtn');
+  const orig = btn.textContent;
+  btn.textContent = '✅ 已保存';
+  setTimeout(() => { btn.textContent = orig; }, 1000);
+}
+
+function checkRestore() {
+  try {
+    const raw = localStorage.getItem('sudoku_saved_game');
+    if (!raw) { startGame(9, 'medium'); return; }
+    const data = JSON.parse(raw);
+    if (!validateSavedGame(data)) { localStorage.removeItem('sudoku_saved_game'); startGame(9, 'medium'); return; }
+    showConfirm('检测到上次未完成的游戏（' + data.boardSize + '×' + data.boardSize + ' ' + ({ easy: '初级', medium: '中级', hard: '高级' })[data.difficulty] + '），继续吗？',
+      function() {
+        stopTimer();
+        const rebuildDOM = data.boardSize !== state.boardSize;
+        state.boardSize = data.boardSize;
+        state.difficulty = data.difficulty;
+        state.puzzle = data.puzzle;
+        state.solution = data.solution;
+        state.userBoard = data.userBoard;
+        state.givenMask = data.givenMask;
+        state.hintFilledMask = data.hintFilledMask;
+        state.errors = data.errors;
+        state.timerSeconds = data.timerSeconds;
+        state.selectedRow = -1; state.selectedCol = -1;
+        state.highlightedHintCell = null;
+        state.gameOver = false;
+        state.highlightEnabled = data.highlightEnabled !== false;
+        state.errorDisplay = data.errorDisplay !== false;
+        state.strictMode = data.strictMode === true;
+        state.singlesOnly = data.singlesOnly !== false;
+        state.givensTarget = data.givensTarget || defaultGivensTarget(state.boardSize, state.difficulty);
+        state.boxToneKey = BOX_TONE_OPTIONS[data.boxToneKey] ? data.boxToneKey : 'green';
+        if (rebuildDOM) buildBoardDOM();
+        updateSizeUI(); updateDiffUI();
+        document.getElementById('highlightToggle').checked = state.highlightEnabled;
+        document.getElementById('errorDisplayToggle').checked = state.errorDisplay;
+        document.getElementById('strictToggle').checked = state.strictMode;
+        document.getElementById('singlesToggle').checked = state.singlesOnly;
+        updateStrictUI(); renderAll(); startTimer(); schedulePhoneScale();
+      },
+      function() {
+        localStorage.removeItem('sudoku_saved_game');
+        startGame(9, 'medium');
+      }
+    );
+  } catch(e) {
+    localStorage.removeItem('sudoku_saved_game');
+    startGame(9, 'medium');
+  }
+}
+
+function isBoardModified() {
+  if (!state.puzzle || !state.userBoard) return false;
+  for (let r = 0; r < state.boardSize; r++) {
+    for (let c = 0; c < state.boardSize; c++) {
+      if (state.userBoard[r][c] !== state.puzzle[r][c]) return true;
+    }
+  }
+  return false;
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && isBoardModified()) autoSave();
+});
+
+// ==================== 打印历史 ====================
+
+const HISTORY_KEY = 'sudoku_print_history';
+const MAX_HISTORY = 20;
+const VALID_SIZES = [4, 6, 9, 16];
+const VALID_DIFFS = ['easy', 'medium', 'hard'];
+const VALID_COUNTS = [2, 4, 8, 12, 16, 20, 24, 32, 40, 48, 64];
+const VALID_PER_PAGE = [1, 2, 4];
+const VALID_PAPERS = Object.keys(PAPER_SIZES);
+const VALID_ORIENTS = ['portrait', 'landscape'];
+
+function validateBoardArray(arr, size) {
+  if (!Array.isArray(arr) || arr.length !== size) return false;
+  for (let r = 0; r < size; r++) {
+    if (!Array.isArray(arr[r]) || arr[r].length !== size) return false;
+    for (let c = 0; c < size; c++) {
+      const v = arr[r][c];
+      if (typeof v !== 'number' || !Number.isInteger(v) || v < 0 || v > size) return false;
+    }
+  }
+  return true;
+}
+
+function validateNotes(arr, size) {
+  if (!Array.isArray(arr) || arr.length !== size) return false;
+  for (let r = 0; r < size; r++) {
+    if (!Array.isArray(arr[r]) || arr[r].length !== size) return false;
+    for (let c = 0; c < size; c++) {
+      if (typeof arr[r][c] !== 'string') return false;
+      if (arr[r][c] !== '' && !/^[0-9]+$/.test(arr[r][c])) return false;
+    }
+  }
+  return true;
+}
+
+function validateSavedGame(data) {
+  if (!data || typeof data !== 'object') return false;
+  if (!VALID_SIZES.includes(data.boardSize)) return false;
+  if (!VALID_DIFFS.includes(data.difficulty)) return false;
+  if (!validateBoardArray(data.puzzle, data.boardSize)) return false;
+  if (!validateBoardArray(data.solution, data.boardSize)) return false;
+  if (!validateBoardArray(data.userBoard, data.boardSize)) return false;
+  if (data.singlesOnly !== undefined && typeof data.singlesOnly !== 'boolean') return false;
+  if (data.givensTarget !== undefined && normalizeGivensTarget(data.boardSize, data.givensTarget) !== data.givensTarget) return false;
+  if (data.boxToneKey !== undefined && !BOX_TONE_OPTIONS[data.boxToneKey]) return false;
+  if (!Array.isArray(data.givenMask) || data.givenMask.length !== data.boardSize) return false;
+  for (let r = 0; r < data.boardSize; r++) {
+    const row = data.givenMask[r];
+    if (!Array.isArray(row) || row.length !== data.boardSize) return false;
+    for (let c = 0; c < data.boardSize; c++) { if (typeof row[c] !== 'boolean') return false; }
+  }
+  if (!Array.isArray(data.hintFilledMask) || data.hintFilledMask.length !== data.boardSize) return false;
+  for (let r = 0; r < data.boardSize; r++) {
+    const row = data.hintFilledMask[r];
+    if (!Array.isArray(row) || row.length !== data.boardSize) return false;
+    for (let c = 0; c < data.boardSize; c++) { if (typeof row[c] !== 'boolean') return false; }
+  }
+  if (typeof data.errors !== 'number' || data.errors < 0) return false;
+  if (typeof data.timerSeconds !== 'number' || data.timerSeconds < 0) return false;
+  return true;
+}
+
+function validatePrintEntry(entry) {
+  if (!entry || typeof entry !== 'object') return false;
+  const paper = entry.paper || 'A4';
+  if (!VALID_PAPERS.includes(paper)) return false;
+  if (!VALID_SIZES.includes(entry.size)) return false;
+  if (!VALID_DIFFS.includes(entry.difficulty)) return false;
+  if (!VALID_COUNTS.includes(entry.count)) return false;
+  if (entry.perPage !== undefined && (!VALID_PER_PAGE.includes(entry.perPage) || entry.perPage > entry.count || entry.perPage > printPerPageCap(paper, entry.size))) return false;
+  if (entry.singlesOnly !== undefined && typeof entry.singlesOnly !== 'boolean') return false;
+  if (!VALID_ORIENTS.includes(entry.orientation)) return false;
+  if (!Array.isArray(entry.puzzles) || entry.puzzles.length !== entry.count) return false;
+  for (let i = 0; i < entry.puzzles.length; i++) {
+    const p = entry.puzzles[i];
+    if (!p || !validateBoardArray(p.puzzle, entry.size)) return false;
+    if (!validateBoardArray(p.solution, entry.size)) return false;
+  }
+  return true;
+}
+
+function validateAndLoadHistory() {
+  try {
+    const raw = localStorage.getItem(HISTORY_KEY);
+    if (!raw) return [];
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return [];
+    const valid = arr.filter(function(e) { return validatePrintEntry(e); });
+    if (valid.length !== arr.length) {
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(valid));
+    }
+    if (valid.length > MAX_HISTORY) valid.length = MAX_HISTORY;
+    return valid;
+  } catch(e) { return []; }
+}
+
+function loadHistory() {
+  try { return validateAndLoadHistory(); }
+  catch (e) { return []; }
+}
+
+function saveHistory(entry) {
+  if (!validatePrintEntry(entry)) return;
+  const history = loadHistory();
+  history.unshift(entry);
+  if (history.length > MAX_HISTORY) history.length = MAX_HISTORY;
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+  renderHistory();
+}
+
+function renderHistory() {
+  const history = loadHistory();
+  const container = document.getElementById('historyEntries');
+  const clearBtn = document.getElementById('clearHistoryBtn');
+  if (clearBtn) clearBtn.disabled = history.length === 0;
+  if (!container) return;
+  container.replaceChildren();
+  if (history.length === 0) {
+    const emptyEl = document.createElement('div');
+    emptyEl.style.color = '#999';
+    emptyEl.style.fontSize = '12px';
+    emptyEl.style.padding = '4px 0';
+    emptyEl.textContent = '暂无打印记录';
+    container.appendChild(emptyEl);
+    return;
+  }
+  const diffNames = { easy: '初级', medium: '中级', hard: '高级' };
+  const VISIBLE_COUNT = 3;
+  const needsToggle = history.length > VISIBLE_COUNT;
+
+  for (let i = 0; i < history.length; i++) {
+    const h = history[i];
+    const perPage = h.perPage || Math.min(2, h.count);
+    const item = document.createElement('div');
+    item.className = 'history-item';
+    if (needsToggle && i >= VISIBLE_COUNT) item.classList.add('hidden');
+
+    const span = document.createElement('span');
+    span.textContent = (h.paper || 'A4') + ' ' + (Number(h.size) || '?') + '×' + (Number(h.size) || '?') + ' ' + (diffNames[h.difficulty] || '未知') + ' ' + (Number(h.count) || '?') + '道 每页' + perPage + '道 ' + (String(h.time || ''));
+    item.appendChild(span);
+
+    const btnDiv = document.createElement('div');
+    btnDiv.className = 'hist-btns';
+
+    const reprintBtn = document.createElement('button');
+    reprintBtn.className = 'hist-btn hist-reprint';
+    reprintBtn.dataset.idx = i;
+    reprintBtn.textContent = '重新打印';
+    btnDiv.appendChild(reprintBtn);
+
+    const loadBtn = document.createElement('button');
+    loadBtn.className = 'hist-btn hist-load';
+    loadBtn.dataset.idx = i;
+    loadBtn.textContent = '载入一道';
+    btnDiv.appendChild(loadBtn);
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'hist-btn hist-delete danger';
+    deleteBtn.dataset.idx = i;
+    deleteBtn.textContent = '删除';
+    btnDiv.appendChild(deleteBtn);
+
+    item.appendChild(btnDiv);
+    container.appendChild(item);
+  }
+
+  if (needsToggle) {
+    const toggleBtn = document.createElement('button');
+    toggleBtn.className = 'hist-toggle';
+    toggleBtn.textContent = '展开全部 (' + history.length + '条)';
+    toggleBtn.addEventListener('click', function() {
+      const hiddenItems = container.querySelectorAll('.history-item.hidden');
+      if (hiddenItems.length > 0) {
+        hiddenItems.forEach(function(el) { el.classList.remove('hidden'); });
+        toggleBtn.textContent = '收起';
+      } else {
+        for (let j = VISIBLE_COUNT; j < history.length; j++) {
+          container.children[j].classList.add('hidden');
+        }
+        toggleBtn.textContent = '展开全部 (' + history.length + '条)';
+      }
+    });
+    container.appendChild(toggleBtn);
+  }
+}
+
+function writeHistory(history) {
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+  renderHistory();
+}
+
+function reprintHistory(idx) {
+  const history = loadHistory();
+  const entry = history[idx];
+  if (!entry || !validatePrintEntry(entry)) return;
+  document.getElementById('printOverlay').classList.remove('show');
+  doPrint(entry);
+}
+
+function loadHistoryPuzzle(idx) {
+  const history = loadHistory();
+  const entry = history[idx];
+  if (!entry || !validatePrintEntry(entry)) return;
+  const { puzzle, solution } = entry.puzzles[0];
+  document.getElementById('printOverlay').classList.remove('show');
+  startGame(entry.size, entry.difficulty, puzzle, solution);
+  showAlert('已载入打印历史中的第1道题，开始解题吧！');
+}
+
+function deleteHistory(idx) {
+  const history = loadHistory();
+  if (idx < 0 || idx >= history.length) return;
+  history.splice(idx, 1);
+  writeHistory(history);
+}
+
+function clearAllHistory() {
+  const history = loadHistory();
+  if (history.length === 0) return;
+  showConfirm('确定清除全部打印历史吗？',
+    function() { writeHistory([]); }
+  );
+}
+
+// ==================== 事件 ====================
+
+document.querySelectorAll('#sizeGroup .ctrl-btn').forEach(b => { b.addEventListener('click', () => { const nextSize = parseInt(b.dataset.size); state.givensTarget = defaultGivensTarget(nextSize, state.difficulty); startGame(nextSize, state.difficulty); }); });
+document.querySelectorAll('#diffGroup .ctrl-btn').forEach(b => { b.addEventListener('click', () => { state.givensTarget = defaultGivensTarget(state.boardSize, b.dataset.diff); startGame(state.boardSize, b.dataset.diff); }); });
+document.getElementById('newGameBtn').addEventListener('click', () => startGame(state.boardSize, state.difficulty));
+givensInputEl.addEventListener('change', () => {
+  state.givensTarget = normalizeGivensTarget(state.boardSize, givensInputEl.value) || defaultGivensTarget(state.boardSize, state.difficulty);
+  startGame(state.boardSize, state.difficulty);
+});
+boxToneSelectEl.addEventListener('change', () => {
+  state.boxToneKey = BOX_TONE_OPTIONS[boxToneSelectEl.value] ? boxToneSelectEl.value : 'green';
+  applyBoxTone();
+});
+document.getElementById('hintFillBtn').addEventListener('click', hintFill);
+document.getElementById('hintHighlightBtn').addEventListener('click', hintHighlight);
+document.getElementById('hintReasonBtn').addEventListener('click', showReason);
+
+numPad.addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; if (b.id === 'eraseBtn') placeNumber(0); else if (b.dataset.num) placeNumber(parseInt(b.dataset.num)); });
+padSideBtn.addEventListener('click', () => {
+  state.keypadSide = state.keypadSide === 'left' ? 'right' : 'left';
+  updatePadSideUI();
+});
+
+document.addEventListener('keydown', e => {
+  if (state.gameOver) return;
+  if (e.key >= '1' && e.key <= '9') { const n = parseInt(e.key); if (n <= state.boardSize) placeNumber(n); }
+  else if (e.key === 'Backspace' || e.key === 'Delete' || e.key === '0') placeNumber(0);
+  else if (e.key === 'ArrowUp' && state.selectedRow > 0) { state.selectedRow--; renderBoard(); }
+  else if (e.key === 'ArrowDown' && state.selectedRow < state.boardSize - 1) { state.selectedRow++; renderBoard(); }
+  else if (e.key === 'ArrowLeft' && state.selectedCol > 0) { state.selectedCol--; renderBoard(); }
+  else if (e.key === 'ArrowRight' && state.selectedCol < state.boardSize - 1) { state.selectedCol++; renderBoard(); }
+});
+
+document.getElementById('playAgainBtn').addEventListener('click', () => { winOverlay.classList.remove('show'); startGame(state.boardSize, state.difficulty); });
+winOverlay.addEventListener('click', e => { if (e.target === winOverlay) { winOverlay.classList.remove('show'); startGame(state.boardSize, state.difficulty); } });
+
+// 玩法说明
+const helpOverlay = document.getElementById('helpOverlay');
+document.getElementById('helpBtn').addEventListener('click', () => helpOverlay.classList.add('show'));
+document.getElementById('helpCloseBtn').addEventListener('click', () => helpOverlay.classList.remove('show'));
+helpOverlay.addEventListener('click', e => { if (e.target === helpOverlay) helpOverlay.classList.remove('show'); });
+
+// 开关
+document.getElementById('highlightToggle').addEventListener('change', e => { state.highlightEnabled = e.target.checked; renderBoard(); });
+document.getElementById('errorDisplayToggle').addEventListener('change', e => { state.errorDisplay = e.target.checked; renderBoard(); });
+document.getElementById('strictToggle').addEventListener('change', e => { state.strictMode = e.target.checked; updateStrictUI(); renderBoard(); renderErrors(); });
+document.getElementById('singlesToggle').addEventListener('change', e => { state.singlesOnly = e.target.checked; });
+clearWrongBtn.addEventListener('click', clearWrongAnswers);
+document.getElementById('saveBtn').addEventListener('click', manualSave);
+
+// 打印
+document.getElementById('printBtn').addEventListener('click', () => {
+  document.getElementById('printSinglesToggle').checked = state.singlesOnly;
+  updatePrintPerPageOptions();
+  document.getElementById('printOverlay').classList.add('show');
+  renderHistory();
+});
+document.getElementById('printPaper').addEventListener('change', updatePrintPerPageOptions);
+document.getElementById('printSize').addEventListener('change', updatePrintPerPageOptions);
+document.getElementById('printGoBtn').addEventListener('click', () => { document.getElementById('printOverlay').classList.remove('show'); doPrint(); });
+document.getElementById('printOverlay').addEventListener('click', e => { if (e.target === document.getElementById('printOverlay')) document.getElementById('printOverlay').classList.remove('show'); });
+document.getElementById('clearHistoryBtn').addEventListener('click', clearAllHistory);
+document.getElementById('historyEntries').addEventListener('click', e => {
+  const reprintBtn = e.target.closest('.hist-reprint');
+  if (reprintBtn) { reprintHistory(parseInt(reprintBtn.dataset.idx)); return; }
+  const loadBtn = e.target.closest('.hist-load');
+  if (loadBtn) { loadHistoryPuzzle(parseInt(loadBtn.dataset.idx)); return; }
+  const deleteBtn = e.target.closest('.hist-delete');
+  if (deleteBtn) { deleteHistory(parseInt(deleteBtn.dataset.idx)); return; }
+});
+
+// 解题分析弹窗
+const reasonOverlay = document.getElementById('reasonOverlay');
+document.getElementById('reasonCloseBtn').addEventListener('click', closeReason);
+reasonOverlay.addEventListener('click', e => { if (e.target === reasonOverlay) closeReason(); });
+
+// 窗口大小变化时重绘
+window.addEventListener('resize', () => { updatePhoneLayout(); buildBoardDOM(); renderBoard(); schedulePhoneScale(); });
+window.addEventListener('orientationchange', () => { updatePhoneLayout(); schedulePhoneScale(); });
+
+// ==================== 启动 ====================
+initBoxToneOptions();
+applyBoxTone();
+updatePhoneLayout(); buildBoardDOM(); updatePadSideUI(); updateStrictUI(); checkRestore(); schedulePhoneScale();
+</script>
+</body>
+</html>
