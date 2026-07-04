@@ -113,16 +113,16 @@ body {
 .cell {
   border: 1.1px solid #b9b9b9;
   display: flex; align-items: center; justify-content: center;
-  cursor: pointer; font-weight: 400; color: #1a1a1a; transition: background 0.1s;
+  cursor: pointer; font-weight: 300; color: #1a1a1a; transition: background 0.1s;
   position: relative;
 }
 .cell:hover { background-color: var(--accent-tint); }
 .cell.selected { background-color: var(--accent-soft); box-shadow: inset 0 0 0 2px var(--accent); }
 .board-grid .cell.same-number { background-color: var(--same-number-bg) !important; color: #111; }
 .board-grid .cell.same-number.selected { background-color: var(--same-number-selected-bg) !important; box-shadow: inset 0 0 0 3px var(--same-number-ring); }
-.cell.given { font-weight: 700; color: #111; }
-.cell.user-filled { color: #374151; font-weight: 400; }
-.cell.hint-filled { color: var(--accent); font-weight: 600; }
+.cell.given { font-weight: 480; color: #111; }
+.cell.user-filled { color: #374151; font-weight: 280; }
+.cell.hint-filled { color: var(--accent); font-weight: 400; }
 .cell.error { color: #dc2626; }
 .cell.answer-wrong::after {
   content: '';
@@ -970,9 +970,9 @@ function updatePhoneScale() {
   if (profile.type === 'desktop') return;
   const edgePadding = profile.type === 'phone' ? 8 : 18;
   const minScale = profile.type === 'phone' ? 0.6 : 0.82;
-  const availableW = Math.max(1, window.innerWidth - edgePadding);
-  const availableH = Math.max(1, window.innerHeight - edgePadding);
-  const scale = Math.min(1, availableW / appContainer.scrollWidth, availableH / appContainer.scrollHeight);
+  const availableW = Math.max(1, window.innerWidth - (profile.type === 'phone' ? 0 : edgePadding));
+  // 只按宽度缩放。按高度缩放会把整页缩小，手机右侧出现空白。
+  const scale = Math.min(1, availableW / appContainer.scrollWidth);
   appContainer.style.zoom = String(Math.max(minScale, scale));
 }
 function schedulePhoneScale() {
