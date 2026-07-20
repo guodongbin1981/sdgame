@@ -463,6 +463,7 @@ body {
     <div class="print-row"><label>纸张</label><select id="printPaper"><option value="A4" selected>A4</option><option value="A5">A5</option><option value="Letter">Letter</option></select></div>
     <div class="print-row"><label>尺寸</label><select id="printSize"><option value="4">4×4</option><option value="6">6×6</option><option value="9" selected>9×9</option><option value="16">16×16</option></select></div>
     <div class="print-row"><label>难度</label><select id="printDiff"><option value="easy">初级</option><option value="medium">中级</option><option value="hard">高级</option></select></div>
+    <div class="print-row"><label>已知数</label><select id="printGivens"></select></div>
     <div class="print-row"><label>题量</label><select id="printCount"><option value="2" selected>2 道</option><option value="4">4 道</option><option value="8">8 道</option><option value="12">12 道</option><option value="16">16 道</option><option value="20">20 道</option><option value="24">24 道</option><option value="32">32 道</option><option value="40">40 道</option><option value="48">48 道</option><option value="64">64 道</option></select></div>
     <div class="print-row"><label>每页</label><select id="printPerPage"><option value="1">1 道</option><option value="2" selected>2 道</option><option value="4">4 道</option></select></div>
     <div class="print-row"><label>方向</label><select id="printOrient"><option value="portrait" selected>纵向</option><option value="landscape">横向</option></select></div>
@@ -1135,7 +1136,25 @@ function updatePrintPerPageOptions() {
   select.value = String(Math.min(current, cap));
 }
 
-function generatePrintPage(size, difficulty, count, orientation, paper, pregenerated, perPageLimit, singlesOnly = true) {
+function updatePrintGivensOptions(preferredTarget) {
+  const size = parseInt(document.getElementById('printSize').value);
+  const difficulty = document.getElementById('printDiff').value;
+  const select = document.getElementById('printGivens');
+  const selected = normalizeGivensTarget(size, preferredTarget) || defaultGivensTarget(size, difficulty);
+  const values = getGivensOptions(size);
+  if (!values.includes(selected)) values.push(selected);
+  values.sort((a, b) => b - a);
+  select.replaceChildren();
+  values.forEach(n => {
+    const option = document.createElement('option');
+    option.value = String(n);
+    option.textContent = n + ' 个';
+    select.appendChild(option);
+  });
+  select.value = String(selected);
+}
+
+function generatePrintPage(size, difficulty, count, orientation, paper, pregenerated, perPageLimit, singlesOnly = true, givensTarget) {
   const cfg = BOARD_CONFIGS[size];
   const br = cfg.boxRows, bc = cfg.boxCols;
 
@@ -1171,7 +1190,7 @@ function generatePrintPage(size, difficulty, count, orientation, paper, pregener
     html += '<div class="page"><div class="grid">';
     for (let i = p; i < Math.min(p + puzzlesPerSheet, count); i++) {
       html += '<div class="puzzle"><div class="puzzle-board"><table>';
-      const puzzle = (pregenerated && pregenerated[i]) ? pregenerated[i].puzzle : generatePuzzle(size, difficulty, singlesOnly).puzzle;
+      const puzzle = (pregenerated && pregenerated[i]) ? pregenerated[i].puzzle : generatePuzzle(size, difficulty, singlesOnly, givensTarget).puzzle;
       for (let r = 0; r < size; r++) {
         html += '<tr>';
         for (let c = 0; c < size; c++) {
@@ -1203,6 +1222,9 @@ function doPrint(pregenerated) {
   const rawPerPage = pregenerated ? (pregenerated.perPage || Math.min(2, count)) : parseInt(document.getElementById('printPerPage').value);
   const perPage = Math.min(rawPerPage, printPerPageCap(paper, size), count);
   const singlesOnly = pregenerated ? (pregenerated.singlesOnly !== false) : document.getElementById('printSinglesToggle').checked;
+  const givensTarget = pregenerated
+    ? (normalizeGivensTarget(size, pregenerated.givensTarget) || defaultGivensTarget(size, difficulty))
+    : (normalizeGivensTarget(size, document.getElementById('printGivens').value) || defaultGivensTarget(size, difficulty));
 
   let puzzles;
   if (pregenerated) {
@@ -1210,18 +1232,18 @@ function doPrint(pregenerated) {
   } else {
     puzzles = [];
     for (let i = 0; i < count; i++) {
-      puzzles.push(generatePuzzle(size, difficulty, singlesOnly));
+      puzzles.push(generatePuzzle(size, difficulty, singlesOnly, givensTarget));
     }
     const entry = {
       id: Date.now(),
-      paper, size, difficulty, count, orientation, perPage, singlesOnly,
+      paper, size, difficulty, count, orientation, perPage, singlesOnly, givensTarget: givensTarget,
       puzzles: puzzles.map(p => ({ puzzle: p.puzzle, solution: p.solution })),
       time: new Date().toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
     };
     saveHistory(entry);
   }
 
-  const html = generatePrintPage(size, difficulty, count, orientation, paper, puzzles, perPage, singlesOnly);
+  const html = generatePrintPage(size, difficulty, count, orientation, paper, puzzles, perPage, singlesOnly, givensTarget);
   const iframe = document.createElement('iframe');
   iframe.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:0;height:0;border:none;';
   iframe.srcdoc = html;
@@ -1551,6 +1573,7 @@ function validatePrintEntry(entry) {
   if (!VALID_COUNTS.includes(entry.count)) return false;
   if (entry.perPage !== undefined && (!VALID_PER_PAGE.includes(entry.perPage) || entry.perPage > entry.count || entry.perPage > printPerPageCap(paper, entry.size))) return false;
   if (entry.singlesOnly !== undefined && typeof entry.singlesOnly !== 'boolean') return false;
+  if (entry.givensTarget !== undefined && normalizeGivensTarget(entry.size, entry.givensTarget) !== entry.givensTarget) return false;
   if (!VALID_ORIENTS.includes(entry.orientation)) return false;
   if (!Array.isArray(entry.puzzles) || entry.puzzles.length !== entry.count) return false;
   for (let i = 0; i < entry.puzzles.length; i++) {
@@ -1757,12 +1780,19 @@ document.getElementById('saveBtn').addEventListener('click', manualSave);
 // 打印
 document.getElementById('printBtn').addEventListener('click', () => {
   document.getElementById('printSinglesToggle').checked = state.singlesOnly;
+  document.getElementById('printSize').value = String(state.boardSize);
+  document.getElementById('printDiff').value = state.difficulty;
   updatePrintPerPageOptions();
+  updatePrintGivensOptions(state.givensTarget);
   document.getElementById('printOverlay').classList.add('show');
   renderHistory();
 });
 document.getElementById('printPaper').addEventListener('change', updatePrintPerPageOptions);
-document.getElementById('printSize').addEventListener('change', updatePrintPerPageOptions);
+document.getElementById('printSize').addEventListener('change', () => {
+  updatePrintPerPageOptions();
+  updatePrintGivensOptions();
+});
+document.getElementById('printDiff').addEventListener('change', () => updatePrintGivensOptions());
 document.getElementById('printGoBtn').addEventListener('click', () => { document.getElementById('printOverlay').classList.remove('show'); doPrint(); });
 document.getElementById('printOverlay').addEventListener('click', e => { if (e.target === document.getElementById('printOverlay')) document.getElementById('printOverlay').classList.remove('show'); });
 document.getElementById('clearHistoryBtn').addEventListener('click', clearAllHistory);
