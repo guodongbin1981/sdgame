@@ -1,3 +1,10 @@
 .playwright-mcp/page-2026-05-21T10-02-32-950Z.yml
 .playwright-mcp/page-2026-05-21T10-05-13-834Z.yml
 *.yml
+
+# wrangler files
+.wrangler
+.dev.vars*
+!.dev.vars.example
+.env*
+!.env.example
