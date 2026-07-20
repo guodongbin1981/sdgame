@@ -468,7 +468,8 @@ body {
     <div class="print-row"><label>每页</label><select id="printPerPage"><option value="1">1 道</option><option value="2" selected>2 道</option><option value="4">4 道</option></select></div>
     <div class="print-row"><label>方向</label><select id="printOrient"><option value="portrait" selected>纵向</option><option value="landscape">横向</option></select></div>
     <div class="print-row"><label>唯一候选</label><label class="setting-row"><span class="toggle-switch"><input type="checkbox" id="printSinglesToggle" checked><span class="toggle-slider"></span></span>开启</label></div>
-    <p style="font-size:12px;color:#999;margin-top:8px;">题目越多，格子自动越小；题目越少，格子越大。建议用 Chrome 打印，边距设为"无"。双面打印、长边翻转、短边翻转请在系统打印对话框中选择。</p>
+    <div class="print-row"><label>打印底色</label><label class="setting-row"><span class="toggle-switch"><input type="checkbox" id="printToneToggle" checked><span class="toggle-slider"></span></span>开启</label></div>
+    <p style="font-size:12px;color:#999;margin-top:8px;">题目越多，格子自动越小；题目越少，格子越大。若预览无底色，请在系统打印窗口开启“背景图形/背景颜色”。双面打印、长短边翻转请在系统打印对话框中选择。</p>
     <button id="printGoBtn" type="button">预览并打印</button>
     <div class="history-list">
       <div class="history-head">
@@ -1154,7 +1155,7 @@ function updatePrintGivensOptions(preferredTarget) {
   select.value = String(selected);
 }
 
-function generatePrintPage(size, difficulty, count, orientation, paper, pregenerated, perPageLimit, singlesOnly = true, givensTarget, boxToneKey = 'green') {
+function generatePrintPage(size, difficulty, count, orientation, paper, pregenerated, perPageLimit, singlesOnly = true, givensTarget, boxToneKey = 'green', printTone = true) {
   const cfg = BOARD_CONFIGS[size];
   const br = cfg.boxRows, bc = cfg.boxCols;
   const tone = BOX_TONE_OPTIONS[boxToneKey] || BOX_TONE_OPTIONS.green;
@@ -1181,7 +1182,7 @@ function generatePrintPage(size, difficulty, count, orientation, paper, pregener
   html += '.puzzle-label { font-size: 9px; color: #999; margin-bottom: 1.5mm; }';
   html += '.puzzle-board table { border-collapse: collapse; border: 2.5px solid #000; }';
   html += '.puzzle-board td { width: ' + (cellMM * 0.95).toFixed(1) + 'mm; height: ' + (cellMM * 0.95).toFixed(1) + 'mm; text-align: center; vertical-align: middle; font-size: ' + (cellMM * 0.95 * 0.55).toFixed(1) + 'mm; border: 1px solid #999; empty-cells: show; background: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }';
-  html += '.puzzle-board .tone-b { background: ' + tone.color + '; }';
+  if (printTone) html += '.puzzle-board .tone-b { background: ' + tone.color + '; }';
   html += '.puzzle-board .thick-right { border-right: 2.5px solid #000; }';
   html += '.puzzle-board .thick-bottom { border-bottom: 2.5px solid #000; }';
   html += '.puzzle-board .thick-top { border-top: 2.5px solid #000; }';
@@ -1197,7 +1198,7 @@ function generatePrintPage(size, difficulty, count, orientation, paper, pregener
         html += '<tr>';
         for (let c = 0; c < size; c++) {
           let cls = '';
-          if ((Math.floor(r / br) + Math.floor(c / bc)) % 2 === 1) cls += ' tone-b';
+          if (printTone && (Math.floor(r / br) + Math.floor(c / bc)) % 2 === 1) cls += ' tone-b';
           if (c % bc === 0) cls += ' thick-left';
           if (c === size - 1) cls += ' thick-right';
           if (r % br === 0) cls += ' thick-top';
@@ -1231,6 +1232,9 @@ function doPrint(pregenerated) {
   const boxToneKey = pregenerated
     ? (BOX_TONE_OPTIONS[pregenerated.boxToneKey] ? pregenerated.boxToneKey : 'green')
     : (BOX_TONE_OPTIONS[state.boxToneKey] ? state.boxToneKey : 'green');
+  const printTone = pregenerated
+    ? (pregenerated.printTone !== false)
+    : document.getElementById('printToneToggle').checked;
 
   let puzzles;
   if (pregenerated) {
@@ -1242,14 +1246,14 @@ function doPrint(pregenerated) {
     }
     const entry = {
       id: Date.now(),
-      paper, size, difficulty, count, orientation, perPage, singlesOnly, givensTarget: givensTarget, boxToneKey: boxToneKey,
+      paper, size, difficulty, count, orientation, perPage, singlesOnly, givensTarget: givensTarget, boxToneKey: boxToneKey, printTone: printTone,
       puzzles: puzzles.map(p => ({ puzzle: p.puzzle, solution: p.solution })),
       time: new Date().toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
     };
     saveHistory(entry);
   }
 
-  const html = generatePrintPage(size, difficulty, count, orientation, paper, puzzles, perPage, singlesOnly, givensTarget, boxToneKey);
+  const html = generatePrintPage(size, difficulty, count, orientation, paper, puzzles, perPage, singlesOnly, givensTarget, boxToneKey, printTone);
   const iframe = document.createElement('iframe');
   iframe.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:0;height:0;border:none;';
   iframe.srcdoc = html;
@@ -1581,6 +1585,7 @@ function validatePrintEntry(entry) {
   if (entry.singlesOnly !== undefined && typeof entry.singlesOnly !== 'boolean') return false;
   if (entry.givensTarget !== undefined && normalizeGivensTarget(entry.size, entry.givensTarget) !== entry.givensTarget) return false;
   if (entry.boxToneKey !== undefined && !BOX_TONE_OPTIONS[entry.boxToneKey]) return false;
+  if (entry.printTone !== undefined && typeof entry.printTone !== 'boolean') return false;
   if (!VALID_ORIENTS.includes(entry.orientation)) return false;
   if (!Array.isArray(entry.puzzles) || entry.puzzles.length !== entry.count) return false;
   for (let i = 0; i < entry.puzzles.length; i++) {
@@ -1787,6 +1792,7 @@ document.getElementById('saveBtn').addEventListener('click', manualSave);
 // 打印
 document.getElementById('printBtn').addEventListener('click', () => {
   document.getElementById('printSinglesToggle').checked = state.singlesOnly;
+  document.getElementById('printToneToggle').checked = true;
   document.getElementById('printSize').value = String(state.boardSize);
   document.getElementById('printDiff').value = state.difficulty;
   updatePrintPerPageOptions();
